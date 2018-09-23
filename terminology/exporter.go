@@ -17,10 +17,11 @@ package terminology
 
 import (
 	"fmt"
-	"github.com/gogo/protobuf/io"
-	"golang.org/x/text/language"
 	"os"
 	"time"
+
+	"github.com/gogo/protobuf/io"
+	"golang.org/x/text/language"
 
 	"github.com/wardle/go-terminology/snomed"
 )
@@ -33,8 +34,7 @@ func (svc *Svc) Export() error {
 	count := 0
 	start := time.Now()
 	err := svc.Iterate(func(concept *snomed.Concept) error {
-		ed := snomed.ExtendedDescription{}
-		err := initialiseExtendedFromConcept(svc, &ed, concept)
+		ed, err := createExtendedDescriptionFromConcept(svc, concept)
 		if err != nil {
 			panic(err)
 		}
@@ -43,12 +43,12 @@ func (svc *Svc) Export() error {
 			panic(err)
 		}
 		for _, d := range descs {
-			ded := ed // make a copy
-			err = initialiseExtendedFromDescription(svc, &ded, d)
+			edCopy := ed
+			err = updateExtendedDescriptionFromDescription(svc, &edCopy, d)
 			if err != nil {
 				panic(err)
 			}
-			w.WriteMsg(&ded)
+			w.WriteMsg(&edCopy)
 			count++
 			if count%10000 == 0 {
 				elapsed := time.Since(start)
@@ -61,36 +61,38 @@ func (svc *Svc) Export() error {
 	return err
 }
 
-func initialiseExtendedFromConcept(svc *Svc, ed *snomed.ExtendedDescription, c *snomed.Concept) error {
-	ed.Concept = c
+// TODO: pass language as a parameter rather than hard-coding British English
+func createExtendedDescriptionFromConcept(svc *Svc, concept *snomed.Concept) (snomed.ExtendedDescription, error) {
+	var ed snomed.ExtendedDescription
+	var err error
 	tags, _, _ := language.ParseAcceptLanguage("en-GB")
-	ed.PreferredDescription = svc.MustGetPreferredSynonym(c, tags)
 
-	allParents, err := svc.GetAllParentIDs(c)
+	copyConcept := *concept
+	ed.Concept = &copyConcept
+	ed.PreferredDescription = svc.MustGetPreferredSynonym(concept, tags)
+	ed.RecursiveParentIds, err = svc.GetAllParentIDs(concept)
 	if err != nil {
-		return err
+		return ed, err
 	}
-	ed.RecursiveParentIds = allParents
-	directParents, err := svc.GetParentIDsOfKind(c, snomed.IsAConceptID)
+	ed.DirectParentIds, err = svc.GetParentIDsOfKind(concept, snomed.IsAConceptID)
 	if err != nil {
-		return err
+		return ed, err
 	}
-	ed.DirectParentIds = directParents
-	conceptRefsets, err := svc.GetReferenceSets(c.Id) // get reference sets for concept
+	ed.ConceptRefsets, err = svc.GetReferenceSets(concept.Id) // get reference sets for concept
 	if err != nil {
-		return err
+		return ed, err
 	}
-	ed.ConceptRefsets = conceptRefsets
-	return nil
+
+	return ed, nil
 }
 
 // TODO: pass language as a parameter rather than hard-coding British English
-func initialiseExtendedFromDescription(svc *Svc, ed *snomed.ExtendedDescription, d *snomed.Description) error {
-	ed.Description = d
-	descRefsets, err := svc.GetReferenceSets(d.Id) // reference sets for description
+func updateExtendedDescriptionFromDescription(svc *Svc, ed *snomed.ExtendedDescription, description *snomed.Description) error {
+	var err error
+	ed.Description = description
+	ed.DescriptionRefsets, err = svc.GetReferenceSets(description.Id) // reference sets for description
 	if err != nil {
 		return err
 	}
-	ed.DescriptionRefsets = descRefsets
 	return nil
 }

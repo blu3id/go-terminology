@@ -20,28 +20,32 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
-	"github.com/wardle/go-terminology/analysis"
-	"github.com/wardle/go-terminology/server"
-	"github.com/wardle/go-terminology/terminology"
 	"log"
 	"os"
 	"runtime/pprof"
+
+	"github.com/wardle/go-terminology/analysis"
+	"github.com/wardle/go-terminology/server"
+	"github.com/wardle/go-terminology/terminology"
 )
 
 var doImport = flag.Bool("import", false, "import SNOMED-CT data files from directories specified")
 var precompute = flag.Bool("precompute", false, "perform precomputations and optimisations")
 var reset = flag.Bool("reset", false, "clear precomputations and optimisations")
-var database = flag.String("db", "", "filename of database to open or create (e.g. ./snomed.db)")
+var database = flag.String("db", "", "path of database to open or create (e.g. ./snomed_db)")
 
-//var index = flag.String("index", "", "filename of index to open or create (e.g. ./snomed.index). ")
+var index = flag.String("index", "", "path of index to open or create defaults to database if empty")
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file specified")
 var runserver = flag.Bool("server", false, "run terminology server")
 var runrpc = flag.Bool("rpc", false, "run RPC service")
 var stats = flag.Bool("status", false, "get statistics")
 var port = flag.Int("port", 8080, "port to use when running server")
 var export = flag.Bool("export", false, "export expanded descriptions in delimited protobuf format")
+var buildindex = flag.Bool("buildindex", false, "build search index")
 var print = flag.Bool("print", false, "print information for each identifier in file specified")
 var dof = flag.Bool("dof", false, "dimensionality analysis and reduction for file specified")
+
+var indexconcept = flag.Int64("concept", 0, "concept to manualy index")
 
 // flags for dof
 var reduceDof = flag.Int("reduce", 0, "Reduce number of factors to specified number")
@@ -54,11 +58,14 @@ func main() {
 		flag.PrintDefaults()
 		os.Exit(1)
 	}
+	if *index == "" {
+		index = database
+	}
 	readOnly := true
-	if *doImport || *precompute || *reset {
+	if *doImport || *precompute || *reset || *buildindex || *indexconcept != 0 {
 		readOnly = false
 	}
-	sct, err := terminology.NewService(*database, readOnly)
+	sct, err := terminology.NewService(*database, *index, readOnly)
 	if err != nil {
 		log.Fatalf("couldn't open database: %v", err)
 	}
@@ -106,6 +113,26 @@ func main() {
 	// export descriptions data in expanded denormalised format
 	if *export {
 		err := sct.Export()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	// build index
+	if *buildindex {
+		err := sct.Index()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	// build index
+	if *indexconcept != 0 {
+		concept, err := sct.GetConcept(*indexconcept)
+		if err != nil {
+			log.Fatal(err)
+		}
+		err = sct.IndexConcept(concept)
 		if err != nil {
 			log.Fatal(err)
 		}

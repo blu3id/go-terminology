@@ -3,12 +3,13 @@ package server
 import (
 	"encoding/json"
 	"errors"
-	"github.com/gorilla/mux"
-	"github.com/wardle/go-terminology/terminology"
 	"log"
 	"net/http"
 	"strconv"
 	"strings"
+
+	"github.com/gorilla/mux"
+	"github.com/wardle/go-terminology/terminology"
 )
 
 // RunServer runs a terminology server
@@ -20,6 +21,9 @@ func RunServer(sct *terminology.Svc, port int) {
 	router.Handle("/snomedct/concepts/{id}/descriptions", &handler{getConceptDescriptions, sct}).Methods("GET")
 	router.Handle("/snomedct/concepts/{id}/genericize", &handler{genericize, sct}).Methods("GET")
 	router.Handle("/snomedct/concepts/{id}/crossmap", &handler{crossmap, sct}).Methods("GET")
+	router.Handle("/snomedct/search", &handler{search, sct}).Methods("GET")
+	router.Handle("/snomedct/synonyms", &handler{synonyms, sct}).Methods("GET")
+	router.Handle("/snomedct/dmd/parse", &handler{parseMedication, sct}).Methods("GET")
 	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(port), router))
 }
 

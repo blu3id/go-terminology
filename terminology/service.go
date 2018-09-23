@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"github.com/wardle/go-terminology/snomed"
+	"github.com/wardle/go-terminology/terminology/medicine"
 	"golang.org/x/text/language"
 )
 
@@ -36,6 +37,7 @@ const (
 // semantic inference and a useful, practical SNOMED-CT API.
 type Svc struct {
 	store
+	search
 	Descriptor
 	language.Matcher
 }
@@ -59,6 +61,7 @@ type Statistics struct {
 type store interface {
 	GetConcept(conceptID int64) (*snomed.Concept, error)
 	GetConcepts(conceptIsvc ...int64) ([]*snomed.Concept, error)
+	GetDescription(concept *snomed.Concept, descriptionID int64) (*snomed.Description, error)
 	GetDescriptions(concept *snomed.Concept) ([]*snomed.Description, error)
 	GetParentRelationships(concept *snomed.Concept) ([]*snomed.Relationship, error)
 	GetChildRelationships(concept *snomed.Concept) ([]*snomed.Relationship, error)
@@ -76,22 +79,26 @@ type store interface {
 // Search represents an opaque abstract SNOMED-CT search service.
 type search interface {
 	// Search executes a search request and returns description identifiers
-	Search(search *SearchRequest) ([]int, error)
+	Search(search *SearchRequest) ([][]int64, error)
+	Index(extendedDescriptions []*snomed.ExtendedDescription) error
+	ParseMedicationString(medication string) (*medicine.ParsedMedication, error)
 	Close() error
 }
 
 // SearchRequest is used to set the parameters on which to search
 type SearchRequest struct {
-	Terms             string // search terms
-	Limit             int    // max number of results
-	Modules           []int  // limit search to specific modules
-	RecursiveParents  []int  // limit search to specific recursive parents
-	DirectParents     []int  // limit search to specific direct parents
-	OnlyActiveConcept bool   // limit search to only active concepts
+	Search                string  `schema:"s"`                     // search term
+	RecursiveParents      []int64 `schema:"root"`                  // one or more root concept identifiers (default 138875005)
+	DirectParents         []int64 `schema:"is"`                    // zero or more direct parent concept identifiers
+	Refsets               []int64 `schema:"refset"`                // filter to concepts within zero of more refsets
+	Limit                 int     `schema:"maxHits"`               // number of hits (default 200)
+	IncludeInactive       bool    `schema:"inactive"`              // whether to include inactive terms in search results (defaults to False)
+	Fuzzy                 bool    `schema:"fuzzy"`                 // whether to use a fuzzy search for search (default to False)
+	SuppressFallbackFuzzy bool    `schema:"suppressFuzzyFallback"` // whether to suppress automatic fallback to fuzzy search if no results found for non-fuzzy search (defaults to False)
 }
 
 // NewService opens or creates a service at the specified location.
-func NewService(path string, readOnly bool) (*Svc, error) {
+func NewService(path string, indexPath string, readOnly bool) (*Svc, error) {
 	err := os.MkdirAll(path, 0771)
 	if err != nil {
 		return nil, err
@@ -107,7 +114,15 @@ func NewService(path string, readOnly bool) (*Svc, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Svc{store: bolt, Descriptor: *descriptor, Matcher: newMatcher(bolt)}, nil
+	err = os.MkdirAll(indexPath, 0771)
+	if err != nil {
+		return nil, err
+	}
+	bleve, err := newBleveService(indexPath, readOnly)
+	if err != nil {
+		return nil, err
+	}
+	return &Svc{store: bolt, search: bleve, Descriptor: *descriptor, Matcher: newMatcher(bolt)}, nil
 }
 
 // Close closes any open resources in the backend implementations
@@ -115,7 +130,10 @@ func (svc *Svc) Close() error {
 	if err := svc.store.Close(); err != nil {
 		return err
 	}
-	return svc.store.Close()
+	if err := svc.search.Close(); err != nil {
+		return err
+	}
+	return nil
 }
 
 func createOrOpenDescriptor(path string) (*Descriptor, error) {
@@ -514,6 +532,34 @@ func (svc *Svc) GenericiseToRoot(concept *snomed.Concept, root int64) (*snomed.C
 		return nil, fmt.Errorf("Root concept of %d not found for concept %d", root, concept.Id)
 	}
 	return bestPath[bestPos-1], nil
+}
+
+func (svc *Svc) ParseMedication(medication string) (*medicine.ParsedMedication, error) {
+	parsedMedication, err := svc.ParseMedicationString(medication)
+	if err != nil {
+		return &medicine.ParsedMedication{}, err
+	}
+
+	var request SearchRequest
+	request.Search = parsedMedication.DrugName()
+	request.RecursiveParents = []int64{373873005}
+	request.Limit = 1
+	result, err := svc.Search(&request)
+	if err != nil {
+		return &medicine.ParsedMedication{}, err
+	}
+
+	if len(result) == 1 {
+		concept, err := svc.GetConcept(result[0][0])
+		if err != nil {
+			return &medicine.ParsedMedication{}, err
+		}
+		tags, _, _ := language.ParseAcceptLanguage("en-GB") //using hardcoded language TODO:Fix
+		preferredDescription := svc.MustGetPreferredSynonym(concept, tags)
+		parsedMedication.SetMappedDrugName(preferredDescription.Term)
+		parsedMedication.SetConceptID(result[0][0])
+	}
+	return parsedMedication, nil
 }
 
 func (st Statistics) String() string {

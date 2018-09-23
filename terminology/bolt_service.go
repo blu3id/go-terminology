@@ -17,8 +17,9 @@ package terminology
 
 import (
 	"fmt"
-	"github.com/golang/protobuf/proto"
 	"strconv"
+
+	"github.com/golang/protobuf/proto"
 
 	"github.com/boltdb/bolt"
 	"github.com/wardle/go-terminology/snomed"
@@ -160,6 +161,19 @@ func (bs *boltService) putDescriptions(descriptions []*snomed.Description) error
 		}
 		return nil
 	})
+}
+
+// GetDescription returns a description for the corresponding descriptionID.
+func (bs *boltService) GetDescription(concept *snomed.Concept, descriptionID int64) (*snomed.Description, error) {
+	var description snomed.Description
+	err := bs.db.View(func(tx *bolt.Tx) error {
+		bucket, err := getPropertiesBucket(tx, concept.Id, nbkDescriptions)
+		if err != nil {
+			return err
+		}
+		return mustReadFromBucket(bucket, descriptionID, &description)
+	})
+	return &description, err
 }
 
 // GetDescriptions returns the descriptions for this concept.
@@ -491,44 +505,40 @@ func (bs *boltService) GetStatistics() (Statistics, error) {
 		// reference sets
 		rs := tx.Bucket([]byte(rbkReferenceSets))
 		stats.refsetItems = rs.Stats().KeyN
-		refsets := make([]int64, 0)
-		c := rs.Cursor()
-		for k, v := c.First(); k != nil; k, v = c.Next() {
-			if v == nil { // if value is nil, then we have a subbucket
-				id, err := strconv.ParseInt(string(k), 10, 64)
-				if err != nil {
-					return err
-				}
-				refsets = append(refsets, id)
+		err := rs.ForEach(func(k, v []byte) error {
+			id, err := strconv.ParseInt(string(k), 10, 64)
+			if err != nil {
+				return err
 			}
-		}
-		concepts, err := bs.GetConcepts(refsets...)
-		if err != nil {
-			return err
-		}
-		for _, c := range concepts {
-			descs, err := bs.GetDescriptions(c)
+			concept, err := bs.GetConcept(id)
+			if err != nil {
+				return err
+			}
+			descs, err := bs.GetDescriptions(concept)
 			if err != nil {
 				return err
 			}
 			if len(descs) > 0 {
-				refsetName := fmt.Sprintf("%s (%d)", descs[0].Term, c.Id)
+				refsetName := fmt.Sprintf("%s (%d)", descs[0].Term, concept.Id)
 				refsetNames = append(refsetNames, refsetName)
 			}
-		}
-		return err
-	})
-	stats.refsets = refsetNames
-	// descriptions
-	countDescs := 0
-	bs.Iterate(func(c *snomed.Concept) error {
-		descs, err := bs.GetDescriptions(c)
+			return nil
+		})
+		stats.refsets = refsetNames
 		if err != nil {
 			return err
 		}
-		countDescs += len(descs)
-		return nil
+		// descriptions
+		pBucket := tx.Bucket([]byte(rbkProperties))
+		countDescs := 0
+		err = pBucket.ForEach(func(k, v []byte) error {
+			conceptBucket := pBucket.Bucket(k)
+			descriptionsBucket := conceptBucket.Bucket([]byte(nbkDescriptions))
+			countDescs += descriptionsBucket.Stats().KeyN
+			return nil
+		})
+		stats.descriptions = countDescs
+		return err
 	})
-	stats.descriptions = countDescs
 	return stats, err
 }

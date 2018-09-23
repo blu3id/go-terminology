@@ -2,12 +2,13 @@ package server
 
 import (
 	"fmt"
+	"net/http"
+	"strconv"
+
 	"github.com/gorilla/mux"
 	"github.com/wardle/go-terminology/snomed"
 	"github.com/wardle/go-terminology/terminology"
 	"golang.org/x/text/language"
-	"net/http"
-	"strconv"
 )
 
 // C represents a returned Concept including useful additional information
@@ -18,6 +19,14 @@ type C struct {
 	Descriptions         []*snomed.Description `json:"descriptions"`
 	PreferredDescription *snomed.Description   `json:"preferredDescription"`
 	PreferredFsn         *snomed.Description   `json:"preferredFsn"`
+	//ParentRelationships  []*snomed.Relationship `json:"parentRelationships"`
+}
+
+// SearchResult represents a returned minimal Concept for search results in same format as rsterminology2
+type SearchResult struct {
+	Term          string `json:"term"`
+	ConceptID     int64  `json:"conceptId"`
+	PreferredTerm string `json:"preferredTerm"`
 }
 
 type dFilter struct {
@@ -86,6 +95,7 @@ func resultForConcept(svc *terminology.Svc, r *http.Request, concept *snomed.Con
 	preferredDescription := svc.MustGetPreferredSynonym(concept, tags)
 	preferredFsn := svc.MustGetFullySpecifiedName(concept, tags)
 	allParents, err := svc.GetAllParentIDs(concept)
+	//parentRelationships, err := svc.GetParentRelationships(concept)
 	if err != nil {
 		return result{nil, err, http.StatusInternalServerError}
 	}
@@ -95,6 +105,7 @@ func resultForConcept(svc *terminology.Svc, r *http.Request, concept *snomed.Con
 		Descriptions:         newDFilter(r).filter(descriptions),
 		PreferredDescription: preferredDescription,
 		PreferredFsn:         preferredFsn,
+		//ParentRelationships:  parentRelationships,
 	},
 		nil, http.StatusOK}
 }
@@ -189,4 +200,135 @@ func genericize(svc *terminology.Svc, w http.ResponseWriter, r *http.Request) re
 		return resultForConcept(svc, r, generic)
 	}
 	return result{nil, fmt.Errorf("must specify either a root or refset"), http.StatusBadRequest}
+}
+
+func search(svc *terminology.Svc, w http.ResponseWriter, r *http.Request) result {
+	query := r.URL.Query()
+	if query.Get("s") == "" {
+		return result{nil, fmt.Errorf("missing parameter: s"), http.StatusBadRequest}
+	}
+
+	var request terminology.SearchRequest
+	request.Search = query.Get("s")
+	for _, v := range query["root"] {
+		i, _ := strconv.ParseInt(string(v), 10, 64)
+		request.RecursiveParents = append(request.RecursiveParents, i)
+	}
+	for _, v := range query["is"] {
+		i, _ := strconv.ParseInt(string(v), 10, 64)
+		request.DirectParents = append(request.DirectParents, i)
+	}
+	for _, v := range query["refset"] {
+		i, _ := strconv.ParseInt(string(v), 10, 64)
+		request.Refsets = append(request.Refsets, i)
+	}
+	request.Limit, _ = strconv.Atoi(query.Get("maxHits"))
+	request.IncludeInactive, _ = strconv.ParseBool(query.Get("inactive"))
+	request.Fuzzy, _ = strconv.ParseBool(query.Get("fuzzy"))
+
+	FallbackFuzzy, _ := strconv.ParseBool(query.Get("fallbackFuzzy"))
+	if !FallbackFuzzy && query.Get("fallbackFuzzy") != "" {
+		request.SuppressFallbackFuzzy = true
+	}
+
+	results, err := svc.Search(&request)
+	if err != nil {
+		return result{nil, err, http.StatusInternalServerError}
+	}
+
+	var out []*SearchResult
+	for _, v := range results {
+		concept, err := svc.GetConcept(v[0])
+		if err != nil {
+			return result{nil, err, http.StatusNotFound}
+		}
+		description, err := svc.GetDescription(concept, v[1])
+		if err != nil {
+			return result{nil, err, http.StatusInternalServerError}
+		}
+		tags, _, _ := language.ParseAcceptLanguage("en-GB") //using hardcoded language as this is what index is currently based on
+		preferredDescription := svc.MustGetPreferredSynonym(concept, tags)
+
+		out = append(out, &SearchResult{
+			description.Term,
+			v[0],
+			preferredDescription.Term,
+		})
+	}
+
+	return result{out, nil, http.StatusOK}
+}
+
+func synonyms(svc *terminology.Svc, w http.ResponseWriter, r *http.Request) result {
+	query := r.URL.Query()
+	if query.Get("s") == "" {
+		return result{nil, fmt.Errorf("missing parameter: s"), http.StatusBadRequest}
+	}
+
+	var request terminology.SearchRequest
+	request.Search = query.Get("s")
+	for _, v := range query["root"] {
+		i, _ := strconv.ParseInt(string(v), 10, 64)
+		request.RecursiveParents = append(request.RecursiveParents, i)
+	}
+	for _, v := range query["is"] {
+		i, _ := strconv.ParseInt(string(v), 10, 64)
+		request.DirectParents = append(request.DirectParents, i)
+	}
+	for _, v := range query["refset"] {
+		i, _ := strconv.ParseInt(string(v), 10, 64)
+		request.Refsets = append(request.Refsets, i)
+	}
+	request.Limit, _ = strconv.Atoi(query.Get("maxHits"))
+	request.IncludeInactive, _ = strconv.ParseBool(query.Get("inactive"))
+	request.Fuzzy, _ = strconv.ParseBool(query.Get("fuzzy"))
+
+	FallbackFuzzy, _ := strconv.ParseBool(query.Get("fallbackFuzzy"))
+	if !FallbackFuzzy && query.Get("fallbackFuzzy") != "" {
+		request.SuppressFallbackFuzzy = true
+	}
+	includeChildren, _ := strconv.ParseBool(query.Get("includeChildren"))
+
+	results, err := svc.Search(&request)
+	if err != nil {
+		return result{nil, err, http.StatusInternalServerError}
+	}
+
+	var out []string
+	for _, v := range results {
+		concept, err := svc.GetConcept(v[0])
+		if err != nil {
+			return result{nil, err, http.StatusNotFound}
+		}
+		descriptions, err := svc.GetDescriptions(concept)
+		if err != nil {
+			return result{nil, err, http.StatusInternalServerError}
+		}
+		for _, v := range newDFilter(r).filter(descriptions) {
+			out = append(out, v.Term)
+		}
+
+		if includeChildren {
+			//children, error := svc.GetAllChildren(concept)
+			//if err != nil {
+			//	return result{nil, err, http.StatusInternalServerError}
+			//}
+		}
+	}
+
+	return result{out, nil, http.StatusOK}
+}
+
+func parseMedication(svc *terminology.Svc, w http.ResponseWriter, r *http.Request) result {
+	query := r.URL.Query()
+	if query.Get("s") == "" {
+		return result{nil, fmt.Errorf("missing parameter: s"), http.StatusBadRequest}
+	}
+
+	out, err := svc.ParseMedication(query.Get("s"))
+	if err != nil {
+		return result{nil, err, http.StatusInternalServerError}
+	}
+
+	return result{out, nil, http.StatusOK}
 }
