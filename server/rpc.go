@@ -2,13 +2,14 @@ package server
 
 import (
 	"fmt"
+	"log"
+	"net"
+
 	"github.com/wardle/go-terminology/snomed"
 	"github.com/wardle/go-terminology/terminology"
 	"golang.org/x/net/context"
 	"golang.org/x/text/language"
 	"google.golang.org/grpc"
-	"log"
-	"net"
 )
 
 type myServer struct {
@@ -98,8 +99,8 @@ func (ss *myServer) Translate(ctx context.Context, tr *snomed.TranslateRequest) 
 			response.Result = &rc
 			return &response, err
 		}
-		refset := snomed.TranslateResponse_ReferenceSet{} // otherwise return the reference set item
-		refset.ReferenceSet = target
+		refset := snomed.TranslateResponse_ReferenceSetItem{} // otherwise return the reference set item
+		refset.ReferenceSetItem = target
 		response.Result = &refset
 		return &response, nil
 	}
