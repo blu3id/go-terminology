@@ -74,7 +74,7 @@ func createExtendedDescriptionFromConcept(svc *Svc, concept *snomed.Concept) (sn
 	if err != nil {
 		return ed, err
 	}
-	ed.DirectParentIds, err = svc.GetParentIDsOfKind(concept, snomed.IsAConceptID)
+	ed.DirectParentIds, err = svc.GetParentIDsOfKind(concept, snomed.IsA)
 	if err != nil {
 		return ed, err
 	}

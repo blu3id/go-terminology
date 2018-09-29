@@ -34,6 +34,7 @@ type boltService struct {
 var (
 	// Root buckets
 	rbkConcepts      = []byte("Concepts")      // root bucket, containing concepts, keyed by id
+	rbkDescriptions  = []byte("Descriptions")  // root bucket, containing descriptions, keyed by id
 	rbkProperties    = []byte("Properties")    // root bucket, holding subbuckets named <conceptID> containing subbuckets (e.g. descriptions) containing all descriptions for that concept
 	rbkReferenceSets = []byte("ReferenceSets") // root bucket, containing nested buckets named <refsetID> containing the items within that refset
 
@@ -142,6 +143,10 @@ func (bs *boltService) putConcepts(concepts []*snomed.Concept) error {
 // This 1) writes the description into generic components bucket and 2) adds the description id to the concept
 func (bs *boltService) putDescriptions(descriptions []*snomed.Description) error {
 	return bs.db.Update(func(tx *bolt.Tx) error {
+		rootBucket, err := tx.CreateBucketIfNotExists(rbkDescriptions)
+		if err != nil {
+			return err
+		}
 		propsBucket, err := tx.CreateBucketIfNotExists(rbkProperties)
 		if err != nil {
 			return err
@@ -155,7 +160,7 @@ func (bs *boltService) putDescriptions(descriptions []*snomed.Description) error
 			if err != nil {
 				return nil
 			}
-			if err := writeToBuckets(d.Id, d, descriptionsBucket); err != nil {
+			if err := writeToBuckets(d.Id, d, descriptionsBucket, rootBucket); err != nil {
 				return err
 			}
 		}
@@ -163,17 +168,17 @@ func (bs *boltService) putDescriptions(descriptions []*snomed.Description) error
 	})
 }
 
-// GetDescription returns a description for the corresponding descriptionID.
-func (bs *boltService) GetDescription(concept *snomed.Concept, descriptionID int64) (*snomed.Description, error) {
-	var description snomed.Description
+// GetDescription returns the description with the given identifier
+func (bs *boltService) GetDescription(descriptionID int64) (*snomed.Description, error) {
+	var c snomed.Description
 	err := bs.db.View(func(tx *bolt.Tx) error {
-		bucket, err := getPropertiesBucket(tx, concept.Id, nbkDescriptions)
-		if err != nil {
-			return err
+		bucket := tx.Bucket(rbkDescriptions)
+		if bucket == nil {
+			return fmt.Errorf("no bucket found with name: %s", rbkDescriptions)
 		}
-		return mustReadFromBucket(bucket, descriptionID, &description)
+		return mustReadFromBucket(bucket, descriptionID, &c)
 	})
-	return &description, err
+	return &c, err
 }
 
 // GetDescriptions returns the descriptions for this concept.
@@ -461,7 +466,7 @@ func (bs *boltService) recursiveChildren(conceptID int64, allChildren map[int64]
 		return err
 	}
 	for _, child := range children {
-		if child.TypeId == snomed.IsAConceptID {
+		if child.TypeId == snomed.IsA {
 			childID := child.SourceId
 			if allChildren[childID] == false {
 				allChildren[childID] = true
@@ -502,6 +507,10 @@ func (bs *boltService) GetStatistics() (Statistics, error) {
 		// concepts
 		cBucket := tx.Bucket([]byte(rbkConcepts))
 		stats.concepts = cBucket.Stats().KeyN
+		// descriptions
+		dBucket := tx.Bucket([]byte(rbkDescriptions))
+		stats.descriptions = dBucket.Stats().KeyN
+
 		// reference sets
 		rs := tx.Bucket([]byte(rbkReferenceSets))
 		stats.refsetItems = rs.Stats().KeyN

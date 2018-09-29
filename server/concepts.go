@@ -12,13 +12,13 @@ import (
 )
 
 // C represents a returned Concept including useful additional information
-// TODO: include derivation of preferredTerm for the locale requested
 type C struct {
 	*snomed.Concept
 	IsA                  []int64               `json:"isA"`
 	Descriptions         []*snomed.Description `json:"descriptions"`
 	PreferredDescription *snomed.Description   `json:"preferredDescription"`
 	PreferredFsn         *snomed.Description   `json:"preferredFsn"`
+	ReferenceSets        []int64               `json:"referenceSets"`
 	//ParentRelationships  []*snomed.Relationship `json:"parentRelationships"`
 }
 
@@ -94,6 +94,10 @@ func resultForConcept(svc *terminology.Svc, r *http.Request, concept *snomed.Con
 	}
 	preferredDescription := svc.MustGetPreferredSynonym(concept, tags)
 	preferredFsn := svc.MustGetFullySpecifiedName(concept, tags)
+	referenceSets, err := svc.GetReferenceSets(concept.Id)
+	if err != nil {
+		return result{nil, err, http.StatusInternalServerError}
+	}
 	allParents, err := svc.GetAllParentIDs(concept)
 	//parentRelationships, err := svc.GetParentRelationships(concept)
 	if err != nil {
@@ -105,6 +109,7 @@ func resultForConcept(svc *terminology.Svc, r *http.Request, concept *snomed.Con
 		Descriptions:         newDFilter(r).filter(descriptions),
 		PreferredDescription: preferredDescription,
 		PreferredFsn:         preferredFsn,
+		ReferenceSets:        referenceSets,
 		//ParentRelationships:  parentRelationships,
 	},
 		nil, http.StatusOK}
@@ -242,7 +247,7 @@ func search(svc *terminology.Svc, w http.ResponseWriter, r *http.Request) result
 		if err != nil {
 			return result{nil, err, http.StatusNotFound}
 		}
-		description, err := svc.GetDescription(concept, v[1])
+		description, err := svc.GetDescription(v[1])
 		if err != nil {
 			return result{nil, err, http.StatusInternalServerError}
 		}
