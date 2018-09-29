@@ -5,6 +5,8 @@ import (
 	"strconv"
 
 	"github.com/blevesearch/bleve"
+	"github.com/blevesearch/bleve/analysis/analyzer/keyword"
+
 	// dbq "github.com/blevesearch/bleve/search/query"
 	"github.com/wardle/go-terminology/snomed"
 	"github.com/wardle/go-terminology/terminology/medicine"
@@ -48,13 +50,13 @@ func newBleveService(path string, readOnly bool) (*bleveService, error) {
 		storedIDMapping.IncludeInAll = false
 		storedIDMapping.IncludeTermVectors = false
 		storedIDMapping.Store = true
-		storedIDMapping.Analyzer = "keyword"
+		storedIDMapping.Analyzer = keyword.Name
 
 		idMapping := bleve.NewTextFieldMapping()
 		idMapping.IncludeInAll = false
 		idMapping.IncludeTermVectors = false
 		idMapping.Store = false
-		idMapping.Analyzer = "keyword"
+		idMapping.Analyzer = keyword.Name
 
 		documentMapping := bleve.NewDocumentMapping()
 		documentMapping.AddFieldMappingsAt("Term", textMapping)
