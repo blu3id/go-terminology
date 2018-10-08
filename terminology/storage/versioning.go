@@ -25,7 +25,7 @@ const (
 func CreateOrOpenDescriptor(path string, currentVersion float32, storeType string) (*Descriptor, error) {
 	descriptorFilename := filepath.Join(path, descriptorName)
 	if _, err := os.Stat(descriptorFilename); os.IsNotExist(err) {
-		desc := &Descriptor{Version: currentVersion, StoreType: storeType}
+		desc := &Descriptor{Version: currentVersion, StoreType: storeType, path: path}
 		return desc, desc.Save()
 	}
 	data, err := ioutil.ReadFile(descriptorFilename)
@@ -33,6 +33,7 @@ func CreateOrOpenDescriptor(path string, currentVersion float32, storeType strin
 		return nil, err
 	}
 	var desc Descriptor
+	desc.path = path
 	return &desc, json.Unmarshal(data, &desc)
 }
 
