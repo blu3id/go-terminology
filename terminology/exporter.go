@@ -16,6 +16,7 @@
 package terminology
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -33,7 +34,7 @@ func (svc *Svc) Export() error {
 
 	count := 0
 	start := time.Now()
-	err := svc.Iterate(func(concept *snomed.Concept) error {
+	svc.Iterate(func(concept *snomed.Concept) error {
 		ed, err := createExtendedDescriptionFromConcept(svc, concept)
 		if err != nil {
 			panic(err)
@@ -53,12 +54,13 @@ func (svc *Svc) Export() error {
 			if count%10000 == 0 {
 				elapsed := time.Since(start)
 				fmt.Fprintf(os.Stderr, "\rProcessed %d descriptions in %s. Mean time per description: %s...", count, elapsed, elapsed/time.Duration(count))
+				return errors.New("End of run")
 			}
 		}
 		return nil
 	})
 	fmt.Fprintf(os.Stderr, "\nProcessed total: %d descriptions in %s.\n", count, time.Since(start))
-	return err
+	return nil
 }
 
 // TODO: pass language as a parameter rather than hard-coding British English

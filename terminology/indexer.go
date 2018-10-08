@@ -6,19 +6,20 @@ import (
 	"time"
 
 	"github.com/wardle/go-terminology/snomed"
+	"golang.org/x/text/language"
 )
 
 // Index build full descriptions and passes to the search service. Esentially complete clone of Export.
 // TODO: Refactor Export to make portable across both Index and Export
 func (svc *Svc) Index() error {
-	var eds []*snomed.ExtendedDescription
+	var ics []*snomed.IndexedConcept
 
 	count := 0
 	start := time.Now()
 	err := svc.Iterate(func(concept *snomed.Concept) error {
-		var ed snomed.ExtendedDescription
+		var ic snomed.IndexedConcept
 		var err error
-		ed, err = createExtendedDescriptionFromConcept(svc, concept)
+		ic, err = createIndexedConcept(svc, concept)
 		if err != nil {
 			panic(err)
 		}
@@ -27,48 +28,53 @@ func (svc *Svc) Index() error {
 			panic(err)
 		}
 		for _, d := range descs {
-			edCopy := ed
-			err = updateExtendedDescriptionFromDescription(svc, &edCopy, d)
+			DescriptionRefsets, err := svc.GetReferenceSets(d.Id)
+			if err != nil {
+				return err
+			}
+			ic.Descriptions = append(ic.Descriptions, &snomed.IndexedConcept_DescriptionWithRefsets{
+				Description:        d,
+				DescriptionRefsets: DescriptionRefsets,
+			})
+		}
+		ics = append(ics, &ic)
+		count++
+		if count%1000 == 0 {
+			err = svc.Search.Index(ics)
 			if err != nil {
 				panic(err)
 			}
-			eds = append(eds, &edCopy)
-			count++
-			if count%1000 == 0 {
-				err = svc.search.Index(eds)
-				if err != nil {
-					panic(err)
-				}
-				eds = []*snomed.ExtendedDescription{}
-				elapsed := time.Since(start)
-				fmt.Fprintf(os.Stderr, "\rProcessed %d descriptions in %s. Mean time per description: %s...", count, elapsed, elapsed/time.Duration(count))
-			}
+			ics = []*snomed.IndexedConcept{}
+			elapsed := time.Since(start)
+			fmt.Fprintf(os.Stderr, "\rProcessed %d concepts in %s. Mean time per concepts: %s...", count, elapsed, elapsed/time.Duration(count))
 		}
 		return nil
 	})
-	fmt.Fprintf(os.Stderr, "\nProcessed total: %d descriptions in %s.\n", count, time.Since(start))
+	fmt.Fprintf(os.Stderr, "\nProcessed total: %d concepts in %s.\n", count, time.Since(start))
 	return err
 }
 
-func (svc *Svc) IndexConcept(concept *snomed.Concept) error {
-	var eds []*snomed.ExtendedDescription
-	var ed snomed.ExtendedDescription
-	ed, err := createExtendedDescriptionFromConcept(svc, concept)
+// TODO: pass language as a parameter rather than hard-coding British English
+func createIndexedConcept(svc *Svc, concept *snomed.Concept) (snomed.IndexedConcept, error) {
+	var ic snomed.IndexedConcept
+	var err error
+	tags, _, _ := language.ParseAcceptLanguage("en-GB")
+
+	copyConcept := *concept
+	ic.Concept = &copyConcept
+	ic.PreferredDescription = svc.MustGetPreferredSynonym(concept, tags)
+	ic.RecursiveParentIds, err = svc.GetAllParentIDs(concept)
 	if err != nil {
-		panic(err)
+		return ic, err
 	}
-	descs, err := svc.GetDescriptions(concept)
+	ic.DirectParentIds, err = svc.GetParentIDsOfKind(concept, snomed.IsA)
 	if err != nil {
-		panic(err)
+		return ic, err
 	}
-	for _, d := range descs {
-		edCopy := ed
-		err = updateExtendedDescriptionFromDescription(svc, &edCopy, d)
-		if err != nil {
-			panic(err)
-		}
-		eds = append(eds, &edCopy)
+	ic.ConceptRefsets, err = svc.GetReferenceSets(concept.Id) // get reference sets for concept
+	if err != nil {
+		return ic, err
 	}
-	err = svc.search.Index(eds)
-	return err
+
+	return ic, nil
 }

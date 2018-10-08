@@ -16,8 +16,10 @@
 package terminology
 
 import (
-	"golang.org/x/text/language"
 	"log"
+
+	"github.com/wardle/go-terminology/terminology/interfaces"
+	"golang.org/x/text/language"
 )
 
 // Language defines a mapping between standard ISO language tags and the associated SNOMED-CT language reference sets
@@ -69,7 +71,7 @@ func (l Language) LanguageReferenceSetIdentifier() int64 {
 
 // newMatcher returns a language matcher that can be used to find the best service supported
 // language given a user's requested preferences.
-func newMatcher(st store) language.Matcher {
+func newMatcher(st interfaces.Store) language.Matcher {
 	allTags := make([]language.Tag, 0, len(tags))
 	installed, err := st.GetAllReferenceSets()
 	if err != nil {

@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/wardle/go-terminology/terminology/interfaces"
+
 	"github.com/golang/protobuf/proto"
 
 	"github.com/boltdb/bolt"
@@ -45,7 +47,7 @@ var (
 )
 
 // assert that, at compile-time, this database service is a valid implementation of a persistence store
-var _ store = (*boltService)(nil)
+var _ interfaces.Store = (*boltService)(nil)
 
 var defaultOptions = &bolt.Options{
 	Timeout:    0,
@@ -500,20 +502,20 @@ func (bs *boltService) Iterate(fn func(*snomed.Concept) error) error {
 // GetStatistics returns statistics for the backend store
 // This is crude and inefficient at the moment
 // TODO(wardle): improve efficiency and speed
-func (bs *boltService) GetStatistics() (Statistics, error) {
-	stats := Statistics{}
+func (bs *boltService) GetStatistics() (interfaces.Statistics, error) {
+	stats := interfaces.Statistics{}
 	refsetNames := make([]string, 0)
 	err := bs.db.View(func(tx *bolt.Tx) error {
 		// concepts
 		cBucket := tx.Bucket([]byte(rbkConcepts))
-		stats.concepts = cBucket.Stats().KeyN
+		stats.Concepts = cBucket.Stats().KeyN
 		// descriptions
 		dBucket := tx.Bucket([]byte(rbkDescriptions))
-		stats.descriptions = dBucket.Stats().KeyN
+		stats.Descriptions = dBucket.Stats().KeyN
 
 		// reference sets
 		rs := tx.Bucket([]byte(rbkReferenceSets))
-		stats.refsetItems = rs.Stats().KeyN
+		stats.RefsetItems = rs.Stats().KeyN
 		err := rs.ForEach(func(k, v []byte) error {
 			id, err := strconv.ParseInt(string(k), 10, 64)
 			if err != nil {
@@ -533,20 +535,10 @@ func (bs *boltService) GetStatistics() (Statistics, error) {
 			}
 			return nil
 		})
-		stats.refsets = refsetNames
+		stats.Refsets = refsetNames
 		if err != nil {
 			return err
 		}
-		// descriptions
-		pBucket := tx.Bucket([]byte(rbkProperties))
-		countDescs := 0
-		err = pBucket.ForEach(func(k, v []byte) error {
-			conceptBucket := pBucket.Bucket(k)
-			descriptionsBucket := conceptBucket.Bucket([]byte(nbkDescriptions))
-			countDescs += descriptionsBucket.Stats().KeyN
-			return nil
-		})
-		stats.descriptions = countDescs
 		return err
 	})
 	return stats, err

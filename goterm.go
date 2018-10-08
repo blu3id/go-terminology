@@ -23,6 +23,7 @@ import (
 	"log"
 	"os"
 	"runtime/pprof"
+	"time"
 
 	"github.com/wardle/go-terminology/analysis"
 	"github.com/wardle/go-terminology/server"
@@ -51,13 +52,15 @@ var buildindex = flag.Bool("buildindex", false, "build search index")
 var print = flag.Bool("print", false, "print information for each identifier in file specified")
 var dof = flag.Bool("dof", false, "dimensionality analysis and reduction for file specified")
 
-var indexconcept = flag.Int64("concept", 0, "concept to manualy index")
-
 // flags for dof
 var reduceDof = flag.Int("reduce", 0, "Reduce number of factors to specified number")
 var minDistance = flag.Int("minimumDistance", 3, "Minimum distance from root")
 
 func main() {
+	flag.Usage = func() {
+		fmt.Printf("Syntax:\n\tgo-terminology [flags]\nwhere flags are:\n")
+		flag.PrintDefaults()
+	}
 	flag.Parse()
 	if *doVersion {
 		fmt.Printf("%s v%s (%s)\n", os.Args[0], version, build)
@@ -72,7 +75,7 @@ func main() {
 		index = database
 	}
 	readOnly := true
-	if *doImport || *precompute || *reset || *buildindex || *indexconcept != 0 {
+	if *doImport || *precompute || *reset || *buildindex {
 		readOnly = false
 	}
 	sct, err := terminology.NewService(*database, *index, readOnly)
@@ -134,18 +137,8 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-	}
-
-	// build index
-	if *indexconcept != 0 {
-		concept, err := sct.GetConcept(*indexconcept)
-		if err != nil {
-			log.Fatal(err)
-		}
-		err = sct.IndexConcept(concept)
-		if err != nil {
-			log.Fatal(err)
-		}
+		time.Sleep(90 * time.Second) // Nasty hack to ensure bleve moss store syncs asynchronous writes to disk
+		sct.Close()
 	}
 
 	if *print {

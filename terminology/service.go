@@ -21,10 +21,11 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/wardle/go-terminology/snomed"
+	"github.com/wardle/go-terminology/terminology/interfaces"
 	"github.com/wardle/go-terminology/terminology/medicine"
+	"github.com/wardle/go-terminology/terminology/search"
 	"golang.org/x/text/language"
 )
 
@@ -36,8 +37,8 @@ const (
 // Svc encapsulates concrete persistent and search services and extends it by providing
 // semantic inference and a useful, practical SNOMED-CT API.
 type Svc struct {
-	store
-	search
+	interfaces.Store
+	interfaces.Search
 	Descriptor
 	language.Matcher
 }
@@ -46,55 +47,6 @@ type Svc struct {
 // and configuration.
 type Descriptor struct {
 	Version float32
-}
-
-// Statistics on the persistence store
-type Statistics struct {
-	concepts      int
-	descriptions  int
-	relationships int
-	refsetItems   int
-	refsets       []string
-}
-
-// Store represents the backend opaque abstract SNOMED-CT persistence service.
-type store interface {
-	GetConcept(conceptID int64) (*snomed.Concept, error)
-	GetConcepts(conceptIsvc ...int64) ([]*snomed.Concept, error)
-	GetDescription(descriptionID int64) (*snomed.Description, error)
-	GetDescriptions(concept *snomed.Concept) ([]*snomed.Description, error)
-	GetParentRelationships(concept *snomed.Concept) ([]*snomed.Relationship, error)
-	GetChildRelationships(concept *snomed.Concept) ([]*snomed.Relationship, error)
-	GetAllChildrenIDs(concept *snomed.Concept) ([]int64, error)
-	GetReferenceSets(componentID int64) ([]int64, error)
-	GetReferenceSetItems(refset int64) (map[int64]bool, error)
-	GetFromReferenceSet(refset int64, component int64) (*snomed.ReferenceSetItem, error)
-	GetAllReferenceSets() ([]int64, error) // list of installed reference sets
-	Put(components interface{}) error
-	Iterate(fn func(*snomed.Concept) error) error
-	GetStatistics() (Statistics, error)
-	Close() error
-}
-
-// Search represents an opaque abstract SNOMED-CT search service.
-type search interface {
-	// Search executes a search request and returns description identifiers
-	Search(search *SearchRequest) ([][]int64, error)
-	Index(extendedDescriptions []*snomed.ExtendedDescription) error
-	ParseMedicationString(medication string) (*medicine.ParsedMedication, error)
-	Close() error
-}
-
-// SearchRequest is used to set the parameters on which to search
-type SearchRequest struct {
-	Search                string  `schema:"s"`                     // search term
-	RecursiveParents      []int64 `schema:"root"`                  // one or more root concept identifiers (default 138875005)
-	DirectParents         []int64 `schema:"is"`                    // zero or more direct parent concept identifiers
-	Refsets               []int64 `schema:"refset"`                // filter to concepts within zero of more refsets
-	Limit                 int     `schema:"maxHits"`               // number of hits (default 200)
-	IncludeInactive       bool    `schema:"inactive"`              // whether to include inactive terms in search results (defaults to False)
-	Fuzzy                 bool    `schema:"fuzzy"`                 // whether to use a fuzzy search for search (default to False)
-	SuppressFallbackFuzzy bool    `schema:"suppressFuzzyFallback"` // whether to suppress automatic fallback to fuzzy search if no results found for non-fuzzy search (defaults to False)
 }
 
 // NewService opens or creates a service at the specified location.
@@ -118,19 +70,19 @@ func NewService(path string, indexPath string, readOnly bool) (*Svc, error) {
 	if err != nil {
 		return nil, err
 	}
-	bleve, err := newBleveService(indexPath, readOnly)
+	bleve, err := bleve.New(indexPath, readOnly)
 	if err != nil {
 		return nil, err
 	}
-	return &Svc{store: bolt, search: bleve, Descriptor: *descriptor, Matcher: newMatcher(bolt)}, nil
+	return &Svc{Store: bolt, Search: bleve, Descriptor: *descriptor, Matcher: newMatcher(bolt)}, nil
 }
 
 // Close closes any open resources in the backend implementations
 func (svc *Svc) Close() error {
-	if err := svc.store.Close(); err != nil {
+	if err := svc.Store.Close(); err != nil {
 		return err
 	}
-	if err := svc.search.Close(); err != nil {
+	if err := svc.Search.Close(); err != nil {
 		return err
 	}
 	return nil
@@ -540,11 +492,11 @@ func (svc *Svc) ParseMedication(medication string) (*medicine.ParsedMedication, 
 		return &medicine.ParsedMedication{}, err
 	}
 
-	var request SearchRequest
+	var request interfaces.SearchRequest
 	request.Search = parsedMedication.DrugName()
 	request.RecursiveParents = []int64{373873005}
 	request.Limit = 1
-	result, err := svc.Search(&request)
+	result, err := svc.Search.Search(&request)
 	if err != nil {
 		return &medicine.ParsedMedication{}, err
 	}
@@ -560,17 +512,4 @@ func (svc *Svc) ParseMedication(medication string) (*medicine.ParsedMedication, 
 		parsedMedication.SetConceptID(result[0][0])
 	}
 	return parsedMedication, nil
-}
-
-func (st Statistics) String() string {
-	var b strings.Builder
-	b.WriteString(fmt.Sprintf("Number of concepts: %d\n", st.concepts))
-	b.WriteString(fmt.Sprintf("Number of descriptions: %d\n", st.descriptions))
-	b.WriteString(fmt.Sprintf("Number of relationships: %d\n", st.relationships))
-	b.WriteString(fmt.Sprintf("Number of reference set items: %d\n", st.refsetItems))
-	b.WriteString(fmt.Sprintf("Number of installed refsets: %d:\n", len(st.refsets)))
-	for _, s := range st.refsets {
-		b.WriteString(fmt.Sprintf("  Installed refset: %s\n", s))
-	}
-	return b.String()
 }

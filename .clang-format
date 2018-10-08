@@ -1,0 +1,4 @@
+BasedOnStyle: Google
+# AlignConsecutiveAssignments: true
+AlignTrailingComments: true
+ColumnLimit: 0

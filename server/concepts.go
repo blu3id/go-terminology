@@ -8,6 +8,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/wardle/go-terminology/snomed"
 	"github.com/wardle/go-terminology/terminology"
+	"github.com/wardle/go-terminology/terminology/interfaces"
 	"golang.org/x/text/language"
 )
 
@@ -213,7 +214,7 @@ func search(svc *terminology.Svc, w http.ResponseWriter, r *http.Request) result
 		return result{nil, fmt.Errorf("missing parameter: s"), http.StatusBadRequest}
 	}
 
-	var request terminology.SearchRequest
+	var request interfaces.SearchRequest
 	request.Search = query.Get("s")
 	for _, v := range query["root"] {
 		i, _ := strconv.ParseInt(string(v), 10, 64)
@@ -236,7 +237,7 @@ func search(svc *terminology.Svc, w http.ResponseWriter, r *http.Request) result
 		request.SuppressFallbackFuzzy = true
 	}
 
-	results, err := svc.Search(&request)
+	results, err := svc.Search.Search(&request)
 	if err != nil {
 		return result{nil, err, http.StatusInternalServerError}
 	}
@@ -270,7 +271,7 @@ func synonyms(svc *terminology.Svc, w http.ResponseWriter, r *http.Request) resu
 		return result{nil, fmt.Errorf("missing parameter: s"), http.StatusBadRequest}
 	}
 
-	var request terminology.SearchRequest
+	var request interfaces.SearchRequest
 	request.Search = query.Get("s")
 	for _, v := range query["root"] {
 		i, _ := strconv.ParseInt(string(v), 10, 64)
@@ -294,7 +295,7 @@ func synonyms(svc *terminology.Svc, w http.ResponseWriter, r *http.Request) resu
 	}
 	includeChildren, _ := strconv.ParseBool(query.Get("includeChildren"))
 
-	results, err := svc.Search(&request)
+	results, err := svc.Search.Search(&request)
 	if err != nil {
 		return result{nil, err, http.StatusInternalServerError}
 	}
