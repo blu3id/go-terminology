@@ -13,20 +13,27 @@
 //    limitations under the License.
 //
 
-package terminology
+package boltdb
 
 import (
 	"fmt"
-	"github.com/golang/protobuf/proto"
+	"os"
+	"path/filepath"
 	"strconv"
 
 	"github.com/boltdb/bolt"
+	"github.com/golang/protobuf/proto"
 	"github.com/wardle/go-terminology/snomed"
+	"github.com/wardle/go-terminology/terminology/storage"
 )
 
-// boltService is a concrete file-based database service for SNOMED-CT
+// Current version of storage
+const currentVersion = 0.2
+
+// boltService is a file-based database service for SNOMED-CT that implements the storage.Store interface
 type boltService struct {
-	db *bolt.DB
+	Store storage.Store
+	db    *bolt.DB
 }
 
 // Bucket structure
@@ -43,9 +50,6 @@ var (
 	nbkDescriptions        = []byte("Descriptions")        // nested bucket, containing descriptions for this concept
 )
 
-// assert that, at compile-time, this database service is a valid implementation of a persistence store
-var _ store = (*boltService)(nil)
-
 var defaultOptions = &bolt.Options{
 	Timeout:    0,
 	NoGrowSync: false,
@@ -57,17 +61,38 @@ var readOnlyOptions = &bolt.Options{
 	ReadOnly:   true,
 }
 
-// NewBoltService creates a new service at the specified location
-func newBoltService(filename string, readOnly bool) (*boltService, error) {
+// New creates a new service at the specified location
+func New(path string, readOnly bool) (storage.Store, error) {
+	var service boltService
+
+	// Create directories along specified path
+	err := os.MkdirAll(path, 0771)
+	if err != nil {
+		return &service, err
+	}
+
+	// Create persistence store descriptor or open existing
+	descriptor, err := storage.CreateOrOpenDescriptor(path, currentVersion, "Bolt")
+	if err != nil {
+		return &service, err
+	}
+
+	if descriptor.StoreType != "Bolt" {
+		return &service, fmt.Errorf("Incompatible persistence store \"%s\", needed Bolt", descriptor.StoreType)
+	}
+	if descriptor.Version != currentVersion {
+		return &service, fmt.Errorf("Incompatible database format v%f, needed %f", descriptor.Version, currentVersion)
+	}
+
 	options := defaultOptions
 	if readOnly {
 		options = readOnlyOptions
 	}
-	db, err := bolt.Open(filename, 0644, options)
+	service.db, err = bolt.Open(filepath.Join(path, "bolt.db"), 0644, options)
 	if err != nil {
 		return nil, err
 	}
-	return &boltService{db: db}, nil
+	return &service, nil
 }
 
 // Put a slice of SNOMED-CT components into persistent storage.
@@ -499,20 +524,20 @@ func (bs *boltService) Iterate(fn func(*snomed.Concept) error) error {
 // GetStatistics returns statistics for the backend store
 // This is crude and inefficient at the moment
 // TODO(wardle): improve efficiency and speed
-func (bs *boltService) GetStatistics() (Statistics, error) {
-	stats := Statistics{}
+func (bs *boltService) GetStatistics() (storage.Statistics, error) {
+	stats := storage.Statistics{}
 	refsetNames := make([]string, 0)
 	err := bs.db.View(func(tx *bolt.Tx) error {
 		// concepts
 		cBucket := tx.Bucket([]byte(rbkConcepts))
-		stats.concepts = cBucket.Stats().KeyN
+		stats.Concepts = cBucket.Stats().KeyN
 		// descriptions
 		dBucket := tx.Bucket([]byte(rbkDescriptions))
-		stats.descriptions = dBucket.Stats().KeyN
+		stats.Descriptions = dBucket.Stats().KeyN
 
 		// reference sets
 		rs := tx.Bucket([]byte(rbkReferenceSets))
-		stats.refsetItems = rs.Stats().KeyN
+		stats.RefsetItems = rs.Stats().KeyN
 		refsets := make([]int64, 0)
 		c := rs.Cursor()
 		for k, v := c.First(); k != nil; k, v = c.Next() {
@@ -540,6 +565,6 @@ func (bs *boltService) GetStatistics() (Statistics, error) {
 		}
 		return err
 	})
-	stats.refsets = refsetNames
+	stats.Refsets = refsetNames
 	return stats, err
 }

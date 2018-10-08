@@ -16,8 +16,9 @@
 package terminology
 
 import (
-	"golang.org/x/text/language"
 	"log"
+
+	"golang.org/x/text/language"
 )
 
 // Language defines a mapping between standard ISO language tags and the associated SNOMED-CT language reference sets
@@ -69,9 +70,9 @@ func (l Language) LanguageReferenceSetIdentifier() int64 {
 
 // newMatcher returns a language matcher that can be used to find the best service supported
 // language given a user's requested preferences.
-func newMatcher(st store) language.Matcher {
+func (svc *Svc) newMatcher() language.Matcher {
 	allTags := make([]language.Tag, 0, len(tags))
-	installed, err := st.GetAllReferenceSets()
+	installed, err := svc.GetAllReferenceSets()
 	if err != nil {
 		panic(err)
 	}
@@ -92,7 +93,13 @@ func newMatcher(st store) language.Matcher {
 
 // Match takes a list of requested languages and identifies the best supported match
 func (svc *Svc) Match(preferred []language.Tag) Language {
-	matchedTag, _, _ := svc.Matcher.Match(preferred...)
+	// Check if languageMatcher has already been initialised. If not get a new
+	// lanaguage matcher and set.
+	if svc.languageMatcher == nil {
+		svc.languageMatcher = svc.newMatcher()
+	}
+
+	matchedTag, _, _ := svc.languageMatcher.Match(preferred...)
 	for language, tag := range tags {
 		if tag == matchedTag {
 			return language

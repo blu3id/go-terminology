@@ -20,12 +20,13 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
-	"github.com/wardle/go-terminology/analysis"
-	"github.com/wardle/go-terminology/server"
-	"github.com/wardle/go-terminology/terminology"
 	"log"
 	"os"
 	"runtime/pprof"
+
+	"github.com/wardle/go-terminology/analysis"
+	"github.com/wardle/go-terminology/server"
+	"github.com/wardle/go-terminology/terminology"
 )
 
 // automatically populated by linker flags
@@ -68,7 +69,7 @@ func main() {
 	if *doImport || *precompute || *reset {
 		readOnly = false
 	}
-	sct, err := terminology.NewService(*database, readOnly)
+	sct, err := terminology.New(*database, readOnly)
 	if err != nil {
 		log.Fatalf("couldn't open database: %v", err)
 	}

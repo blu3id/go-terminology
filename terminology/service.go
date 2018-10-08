@@ -16,113 +16,38 @@
 package terminology
 
 import (
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
-	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/wardle/go-terminology/snomed"
+	"github.com/wardle/go-terminology/terminology/storage"
+	"github.com/wardle/go-terminology/terminology/storage/boltdb"
 	"golang.org/x/text/language"
 )
 
-const (
-	descriptorName = "sctdb.json"
-	currentVersion = 0.2
-)
-
-// Svc encapsulates concrete persistent and search services and extends it by providing
-// semantic inference and a useful, practical SNOMED-CT API.
+// Svc encapsulates concrete persistent and search services and extends it by
+// providing semantic inference and a useful, practical SNOMED-CT API.
 type Svc struct {
-	store
-	Descriptor
-	language.Matcher
+	storage.Store
+	languageMatcher language.Matcher
 }
 
-// Descriptor provides a simple structure for file-backed database versioning
-// and configuration.
-type Descriptor struct {
-	Version float32
-}
-
-// Statistics on the persistence store
-type Statistics struct {
-	concepts      int
-	descriptions  int
-	relationships int
-	refsetItems   int
-	refsets       []string
-}
-
-// Store represents the backend opaque abstract SNOMED-CT persistence service.
-type store interface {
-	GetConcept(conceptID int64) (*snomed.Concept, error)
-	GetConcepts(conceptIsvc ...int64) ([]*snomed.Concept, error)
-	GetDescription(descriptionID int64) (*snomed.Description, error)
-	GetDescriptions(concept *snomed.Concept) ([]*snomed.Description, error)
-	GetParentRelationships(concept *snomed.Concept) ([]*snomed.Relationship, error)
-	GetChildRelationships(concept *snomed.Concept) ([]*snomed.Relationship, error)
-	GetAllChildrenIDs(concept *snomed.Concept) ([]int64, error)
-	GetReferenceSets(componentID int64) ([]int64, error)
-	GetReferenceSetItems(refset int64) (map[int64]bool, error)
-	GetFromReferenceSet(refset int64, component int64) (*snomed.ReferenceSetItem, error)
-	GetAllReferenceSets() ([]int64, error) // list of installed reference sets
-	Put(components interface{}) error
-	Iterate(fn func(*snomed.Concept) error) error
-	GetStatistics() (Statistics, error)
-	Close() error
-}
-
-// NewService opens or creates a service at the specified location.
-func NewService(path string, readOnly bool) (*Svc, error) {
-	err := os.MkdirAll(path, 0771)
+// New opens or creates a terminology service passing the specified location to
+// the persistence service
+func New(path string, readOnly bool) (*Svc, error) {
+	// Creates a new instance of the "boltdb" persistence service
+	bolt, err := boltdb.New(path, readOnly)
 	if err != nil {
 		return nil, err
 	}
-	descriptor, err := createOrOpenDescriptor(path)
-	if err != nil {
-		return nil, err
-	}
-	if descriptor.Version != currentVersion {
-		return nil, fmt.Errorf("Incompatible database format v%f, needed %f", descriptor.Version, currentVersion)
-	}
-	bolt, err := newBoltService(filepath.Join(path, "bolt.db"), readOnly)
-	if err != nil {
-		return nil, err
-	}
-	return &Svc{store: bolt, Descriptor: *descriptor, Matcher: newMatcher(bolt)}, nil
+	return &Svc{Store: bolt}, nil
 }
 
 // Close closes any open resources in the backend implementations
 func (svc *Svc) Close() error {
-	if err := svc.store.Close(); err != nil {
+	if err := svc.Store.Close(); err != nil {
 		return err
 	}
-	return svc.store.Close()
-}
-
-func createOrOpenDescriptor(path string) (*Descriptor, error) {
-	descriptorFilename := filepath.Join(path, descriptorName)
-	if _, err := os.Stat(descriptorFilename); os.IsNotExist(err) {
-		desc := &Descriptor{Version: currentVersion}
-		return desc, saveDescriptor(path, desc)
-	}
-	data, err := ioutil.ReadFile(descriptorFilename)
-	if err != nil {
-		return nil, err
-	}
-	var desc Descriptor
-	return &desc, json.Unmarshal(data, &desc)
-}
-
-func saveDescriptor(path string, descriptor *Descriptor) error {
-	descriptorFilename := filepath.Join(path, descriptorName)
-	data, err := json.Marshal(descriptor)
-	if err != nil {
-		return err
-	}
-	return ioutil.WriteFile(descriptorFilename, data, 0644)
+	return svc.Store.Close()
 }
 
 // IsA tests whether the given concept is a type of the specified
@@ -498,17 +423,4 @@ func (svc *Svc) GenericiseToRoot(concept *snomed.Concept, root int64) (*snomed.C
 		return nil, fmt.Errorf("Root concept of %d not found for concept %d", root, concept.Id)
 	}
 	return bestPath[bestPos-1], nil
-}
-
-func (st Statistics) String() string {
-	var b strings.Builder
-	b.WriteString(fmt.Sprintf("Number of concepts: %d\n", st.concepts))
-	b.WriteString(fmt.Sprintf("Number of descriptions: %d\n", st.descriptions))
-	b.WriteString(fmt.Sprintf("Number of relationships: %d\n", st.relationships))
-	b.WriteString(fmt.Sprintf("Number of reference set items: %d\n", st.refsetItems))
-	b.WriteString(fmt.Sprintf("Number of installed refsets: %d:\n", len(st.refsets)))
-	for _, s := range st.refsets {
-		b.WriteString(fmt.Sprintf("  Installed refset: %s\n", s))
-	}
-	return b.String()
 }

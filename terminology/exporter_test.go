@@ -16,11 +16,11 @@
 package terminology
 
 import (
-	"golang.org/x/text/language"
 	"os"
 	"testing"
 
 	"github.com/wardle/go-terminology/snomed"
+	"golang.org/x/text/language"
 )
 
 const (
@@ -31,7 +31,7 @@ func setUp(tb testing.TB) *Svc {
 	if _, err := os.Stat(dbFilename); os.IsNotExist(err) { // skip these tests if no working live snomed db
 		tb.Skipf("Skipping tests against a live database. To run, create a database named %s", dbFilename)
 	}
-	svc, err := NewService(dbFilename, true)
+	svc, err := New(dbFilename, true)
 	if err != nil {
 		tb.Fatal(err)
 	}

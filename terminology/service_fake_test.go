@@ -16,12 +16,12 @@
 package terminology_test
 
 import (
-	"github.com/gogo/protobuf/proto"
-	"github.com/golang/protobuf/ptypes"
 	"os"
 	"testing"
 	"time"
 
+	"github.com/gogo/protobuf/proto"
+	"github.com/golang/protobuf/ptypes"
 	"github.com/wardle/go-terminology/snomed"
 	"github.com/wardle/go-terminology/terminology"
 )
@@ -31,7 +31,7 @@ const (
 )
 
 func TestStore(t *testing.T) {
-	svc, err := terminology.NewService(fakeDbFilename, false)
+	svc, err := terminology.New(fakeDbFilename, false)
 	if err != nil {
 		t.Fatal(err)
 	}

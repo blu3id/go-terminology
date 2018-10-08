@@ -12,16 +12,17 @@
 //    See the License for the specific language governing permissions and
 //    limitations under the License.
 //
-package terminology
+package boltdb
 
 import (
+	"os"
+	"testing"
+	"time"
+
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/kylelemons/godebug/pretty"
 	"github.com/wardle/go-terminology/snomed"
-	"os"
-	"testing"
-	"time"
 )
 
 const (
@@ -29,7 +30,7 @@ const (
 )
 
 func TestStore(t *testing.T) {
-	bolt, err := newBoltService(boltFilename, false)
+	bolt, err := New(boltFilename, false)
 	if err != nil {
 		t.Fatal(err)
 	}
