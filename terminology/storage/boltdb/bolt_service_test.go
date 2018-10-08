@@ -96,5 +96,5 @@ func TestStore(t *testing.T) {
 	}
 
 	bolt.Close()
-	os.Remove(boltFilename)
+	os.RemoveAll(boltFilename)
 }

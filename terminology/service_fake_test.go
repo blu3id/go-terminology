@@ -106,5 +106,6 @@ func TestStore(t *testing.T) {
 	if len(children) != 0 {
 		t.Fatal("Multiple sclerosis given child concepts!")
 	}
-
+	svc.Close()
+	os.RemoveAll(fakeDbFilename)
 }

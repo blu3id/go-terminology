@@ -2,13 +2,14 @@ package server
 
 import (
 	"fmt"
+	"log"
+	"os"
+	"testing"
+
 	"github.com/wardle/go-terminology/snomed"
 	"github.com/wardle/go-terminology/terminology"
 	context "golang.org/x/net/context"
 	"google.golang.org/grpc"
-	"log"
-	"os"
-	"testing"
 )
 
 const (
@@ -21,7 +22,7 @@ func TestMain(m *testing.M) {
 		log.Printf("Skipping live tests in the absence of a live database %s", dbFilename)
 		os.Exit(0)
 	}
-	svc, err := terminology.NewService(dbFilename, false)
+	svc, err := terminology.New(dbFilename, false)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -65,7 +66,7 @@ func TestRpcClient(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if t2.GetReferenceSet().GetComplexMap().GetMapTarget() != "G35X" {
+		if t2.GetReferenceSetItem().GetComplexMap().GetMapTarget() != "G35X" {
 			t.Fatalf("didn't match multiple sclerosis to ICD-10. expected: G35X, got: %v", t2)
 		}
 		// test translating ADEM into emergency care reference set - should get encephalitis (45170000)
