@@ -1,7 +1,6 @@
 package server
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"testing"
@@ -14,7 +13,7 @@ import (
 
 const (
 	dbFilename = "../snomed.db" // real, live database
-	port       = 8080
+	host       = ":8080"
 )
 
 func TestMain(m *testing.M) {
@@ -22,20 +21,19 @@ func TestMain(m *testing.M) {
 		log.Printf("Skipping live tests in the absence of a live database %s", dbFilename)
 		os.Exit(0)
 	}
-	svc, err := terminology.New(dbFilename, false)
+	svc, err := terminology.New(dbFilename, true)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer svc.Close()
-	go RunRPCServer(svc, port)
+	go Serve(svc, host)
 	os.Exit(m.Run())
 }
 
 func TestRpcClient(t *testing.T) {
 
 	// Set up a connection to the Server.
-	address := fmt.Sprintf("localhost:%d", port)
-	conn, err := grpc.Dial(address, grpc.WithInsecure())
+	conn, err := grpc.Dial(host, grpc.WithInsecure())
 	if err != nil {
 		t.Fatalf("did not connect: %v", err)
 	}

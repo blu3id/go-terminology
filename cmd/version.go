@@ -11,7 +11,7 @@ var versionCmd = &cobra.Command{
 	Short: "Print the version number and build information",
 	Long:  `Print the version number and build information`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("go-terminology v%s (%s)\n", Version, Build)
+		fmt.Printf("go-terminology v%s (%s)\n", version, build)
 	},
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		// override RootCmd version

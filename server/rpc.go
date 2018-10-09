@@ -1,154 +1,101 @@
 package server
 
 import (
-	"fmt"
 	"log"
 	"net"
+	"net/http"
+	"strings"
 
+	"github.com/grpc-ecosystem/grpc-gateway/runtime"
+	"github.com/soheilhy/cmux"
 	"github.com/wardle/go-terminology/snomed"
 	"github.com/wardle/go-terminology/terminology"
 	"golang.org/x/net/context"
-	"golang.org/x/text/language"
 	"google.golang.org/grpc"
 )
 
-type myServer struct {
-	svc *terminology.Svc
+func serveGRPC(l net.Listener, sct *terminology.Svc) {
+	// Register gRPC SNOMED Service
+	var gRPCOpts []grpc.ServerOption
+	gRPCServer := grpc.NewServer(gRPCOpts...)
+	snomed.RegisterSnomedCTServer(gRPCServer, &snomedCTSrv{svc: sct})
+
+	if err := gRPCServer.Serve(l); err != nil {
+		log.Fatalf("Error while serving gRPC: %v", err)
+	}
+	return
 }
 
-// RunRPCServer runs the RPC server
-func RunRPCServer(svc *terminology.Svc, port int) error {
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+func serveGRPCGateway(l net.Listener, host string) {
+	// Register gRPC Gateway HTTP Reverse Proxy
+	ctx := context.Background()
+	gRPCGateway := runtime.NewServeMux()
+	gRPCGatewayOpts := []grpc.DialOption{grpc.WithInsecure()}
+	err := snomed.RegisterSnomedCTHandlerFromEndpoint(ctx, gRPCGateway, host, gRPCGatewayOpts)
+	if err != nil {
+		log.Fatalf("Error Registering gRPC Gateway Handler: %v", err)
+		return
+	}
+
+	if err := http.Serve(l, gRPCGateway); err != nil {
+		log.Fatalf("Error while serving HTTP: %v", err)
+	}
+	return
+}
+
+// Serve starts listening on host (interface:port) for either gRPC requests or
+// HTTP request and passess connections onto appropriate handler. HTTP requests
+// are passed through gRPC Gateway HTTP Reverse Proxy and back to gRPC server.
+func Serve(sct *terminology.Svc, host string) {
+	// Create a listener at the desired port.
+	l, err := net.Listen("tcp", host)
+	defer l.Close()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Create a cmux object.
+	tcpm := cmux.New(l)
+
+	// Declare the match for different services required.
+	grpc := tcpm.Match(cmux.HTTP2HeaderField("content-type", "application/grpc"))
+	http := tcpm.Match(cmux.HTTP1Fast())
+
+	// Initialize the servers by passing in the custom listeners (sub-listeners).
+	go serveGRPC(grpc, sct)
+	go serveGRPCGateway(http, host)
+	log.Println("gRPC and HTTP server listening on", host)
+
+	// Start cmux serving.
+	if err := tcpm.Serve(); !strings.Contains(err.Error(),
+		"use of closed network connection") {
+		log.Fatal(err)
+	}
+}
+
+/*
+// Only works if using TLS with gRPC
+
+// Serve starts listening on host (interface:port) for either gRPC requests or
+// HTTP request and passess connections onto appropriate handler. HTTP requests
+// are passed through gRPC Gateway HTTP Reverse Proxy and back to gRPC server.
+func Serve(sct *terminology.Svc, host string) error {
+	// Register gRPC SNOMED Service
+	var gRPCOpts []grpc.ServerOption
+	gRPCServer := grpc.NewServer(gRPCOpts...)
+	snomed.RegisterSnomedCTServer(gRPCServer, &myServer{svc: sct})
+
+	// Register gRPC Gateway HTTP Reverse Proxy
+	ctx := context.Background()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	gRPCGateway := runtime.NewServeMux()
+	gRPCGatewayOpts := []grpc.DialOption{grpc.WithInsecure()}
+	err := snomed.RegisterSnomedCTHandlerFromEndpoint(ctx, gRPCGateway, host, gRPCGatewayOpts)
 	if err != nil {
 		return err
 	}
-	var opts []grpc.ServerOption
-	server := grpc.NewServer(opts...)
-	snomed.RegisterSnomedCTServer(server, &myServer{svc: svc})
-	if err := server.Serve(lis); err != nil {
-		log.Fatalf("failed to serve : %v", err)
-	}
-	return nil
-}
-func (ss *myServer) GetConcept(ctx context.Context, conceptID *snomed.SctID) (*snomed.Concept, error) {
-	return ss.svc.GetConcept(conceptID.Identifier)
-}
 
-func (ss *myServer) GetExtendedConcept(ctx context.Context, conceptID *snomed.SctID) (*snomed.ExtendedConcept, error) {
-	c, err := ss.svc.GetConcept(conceptID.Identifier)
-	if err != nil {
-		return nil, err
-	}
-	result := snomed.ExtendedConcept{}
-	result.Concept = c
-	refsets, err := ss.svc.GetReferenceSets(c.Id)
-	if err != nil {
-		return nil, err
-	}
-	result.ConceptRefsets = refsets
-	relationships, err := ss.svc.GetParentRelationships(c)
-	if err != nil {
-		return nil, err
-	}
-	result.Relationships = relationships
-	recursiveParentIDs, err := ss.svc.GetAllParentIDs(c)
-	if err != nil {
-		return nil, err
-	}
-	result.RecursiveParentIds = recursiveParentIDs
-	directParents, err := ss.svc.GetParentIDsOfKind(c, snomed.IsA)
-	if err != nil {
-		return nil, err
-	}
-	result.DirectParentIds = directParents
-	tags, _, _ := language.ParseAcceptLanguage("en-GB") // TODO(mw): better language support
-	result.PreferredDescription = ss.svc.MustGetPreferredSynonym(c, tags)
-	return &result, nil
+	return http.ListenAndServe(host, grpcHandlerFunc(gRPCServer, gRPCGateway))
 }
-
-func (ss *myServer) GetDescriptions(conceptID *snomed.SctID, server snomed.SnomedCT_GetDescriptionsServer) error {
-	c, err := ss.svc.GetConcept(conceptID.Identifier)
-	if err != nil {
-		return err
-	}
-	descs, err := ss.svc.GetDescriptions(c)
-	if err != nil {
-		return err
-	}
-	for _, d := range descs {
-		server.Send(d)
-	}
-	return nil
-}
-
-func (ss *myServer) GetDescription(ctx context.Context, id *snomed.SctID) (*snomed.Description, error) {
-	return ss.svc.GetDescription(id.Identifier)
-}
-
-func (ss *myServer) Translate(ctx context.Context, tr *snomed.TranslateRequest) (*snomed.TranslateResponse, error) {
-	response := snomed.TranslateResponse{}
-	target, err := ss.svc.GetFromReferenceSet(tr.TargetId, tr.ConceptId)
-	if err != nil {
-		return nil, err
-	}
-	if target != nil { // we have found our concept in the reference set, so return that entry
-		simple := target.GetSimple() // a simple refset
-		if simple != nil {           // found concept in a simple map, so just return it.
-			rc := snomed.TranslateResponse_Concept{}
-			rc.Concept, err = ss.svc.GetConcept(tr.ConceptId)
-			response.Result = &rc
-			return &response, err
-		}
-		refset := snomed.TranslateResponse_ReferenceSetItem{} // otherwise return the reference set item
-		refset.ReferenceSetItem = target
-		response.Result = &refset
-		return &response, nil
-	}
-	c, err := ss.svc.GetConcept(tr.ConceptId)
-	if err != nil {
-		return nil, err
-	}
-	members, err := ss.svc.GetReferenceSetItems(tr.TargetId)
-	if err != nil {
-		return nil, err
-	}
-	generic, found := ss.svc.GenericiseTo(c, members)
-	if found {
-		result := snomed.TranslateResponse_Concept{}
-		result.Concept = generic
-		response.Result = &result
-		return &response, nil
-	}
-	return nil, fmt.Errorf("Unable to translate %d to %d", tr.ConceptId, tr.TargetId)
-}
-
-// Subsumes determines whether code A subsumes code B, according to the definition
-// in the HL7 FHIR terminology service specification.
-// See https://www.hl7.org/fhir/terminology-service.html
-func (ss *myServer) Subsumes(ctx context.Context, r *snomed.SubsumptionRequest) (*snomed.SubsumptionResponse, error) {
-	res := snomed.SubsumptionResponse{}
-	if r.CodeA == r.CodeB {
-		res.Result = snomed.SubsumptionResponse_EQUIVALENT
-		return &res, nil
-	}
-	c, err := ss.svc.GetConcept(r.CodeB)
-	if err != nil {
-		return nil, err
-	}
-	if ss.svc.IsA(c, r.CodeA) {
-		res.Result = snomed.SubsumptionResponse_SUBSUMES
-		return &res, nil
-	}
-	c, err = ss.svc.GetConcept(r.CodeA)
-	if err != nil {
-		return nil, err
-	}
-	if ss.svc.IsA(c, r.CodeB) {
-		res.Result = snomed.SubsumptionResponse_SUBSUMED_BY
-		return &res, nil
-	}
-	res.Result = snomed.SubsumptionResponse_NOT_SUBSUMED
-	return &res, nil
-}
-
-var _ snomed.SnomedCTServer = (*myServer)(nil)
+*/

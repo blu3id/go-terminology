@@ -11,8 +11,7 @@ import (
 )
 
 var sct *terminology.Svc
-var profilecpu string
-var Version, Build string
+var profilecpu, version, build string
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
@@ -60,8 +59,8 @@ var rootCmd = &cobra.Command{
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 // Receives version and build strings from main
 func Execute(version string, build string) {
-	Version = version
-	Build = build
+	version = version
+	build = build
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Println(err)
 		os.Exit(-1)
