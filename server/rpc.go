@@ -10,15 +10,17 @@ import (
 	"github.com/soheilhy/cmux"
 	"github.com/wardle/go-terminology/snomed"
 	"github.com/wardle/go-terminology/terminology"
+	"github.com/wardle/go-terminology/terminology/medicine"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 )
 
 func serveGRPC(l net.Listener, sct *terminology.Svc) {
-	// Register gRPC SNOMED Service
+	// Register gRPC Services
 	var gRPCOpts []grpc.ServerOption
 	gRPCServer := grpc.NewServer(gRPCOpts...)
-	snomed.RegisterSnomedCTServer(gRPCServer, &snomedCTSrv{svc: sct})
+	snomed.RegisterSnomedCTServer(gRPCServer, &snomedCTSrv{svc: sct}) // Register SnomedCT Service
+	medicine.RegisterDmdServer(gRPCServer, &dmdSrv{})                 // Register dmd Service
 
 	if err := gRPCServer.Serve(l); err != nil {
 		log.Fatalf("Error while serving gRPC: %v", err)
@@ -27,13 +29,20 @@ func serveGRPC(l net.Listener, sct *terminology.Svc) {
 }
 
 func serveGRPCGateway(l net.Listener, host string) {
-	// Register gRPC Gateway HTTP Reverse Proxy
+	// Register gRPC Gateway HTTP Reverse Proxies
 	ctx := context.Background()
 	gRPCGateway := runtime.NewServeMux()
 	gRPCGatewayOpts := []grpc.DialOption{grpc.WithInsecure()}
+	// Register SnomedCT Service Gateway
 	err := snomed.RegisterSnomedCTHandlerFromEndpoint(ctx, gRPCGateway, host, gRPCGatewayOpts)
 	if err != nil {
-		log.Fatalf("Error Registering gRPC Gateway Handler: %v", err)
+		log.Fatalf("Error Registering SnomedCT gRPC Gateway Handler: %v", err)
+		return
+	}
+	// Register dmd Service Gateway
+	err = medicine.RegisterDmdHandlerFromEndpoint(ctx, gRPCGateway, host, gRPCGatewayOpts)
+	if err != nil {
+		log.Fatalf("Error Registering dmd gRPC Gateway Handler: %v", err)
 		return
 	}
 

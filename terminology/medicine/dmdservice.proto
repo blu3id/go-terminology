@@ -1,0 +1,17 @@
+syntax = "proto3";
+package medicine;
+
+option go_package = "medicine";
+
+import "medicine.proto";
+import "google/api/annotations.proto";
+
+message MedicationString { string s = 1; }
+
+service dmd {
+  rpc ParseMedication(MedicationString) returns (ParsedMedication) {
+    option (google.api.http) = {
+      get : "/v1/snomed/dmd/parse"
+    };
+  };
+}

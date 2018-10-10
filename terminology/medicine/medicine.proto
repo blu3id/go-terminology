@@ -1,0 +1,41 @@
+syntax = "proto3";
+package medicine;
+
+option go_package = "medicine";
+
+message ParsedMedication {
+  string drug_name = 1;
+  int64 concept_id = 2;
+  string mapped_drug_name = 3;
+  double dose = 4;
+  Units units = 5;
+  Frequency frequency = 6;
+  Route route = 7;
+  bool as_required = 8;
+  string notes = 9;
+  string string = 10;
+  double equivalent_dose = 11;
+  double daily_equivalent_dose = 12;
+}
+
+message Units {
+  int64 concept_id = 1;
+  PrescribingType prescribing_type = 2;
+  repeated string abbreviations = 3;
+
+  enum PrescribingType {
+    UNDEFINED = 0;
+    DOSE_BASED = 1;
+    PRODUCT_BASED = 2;
+  }
+}
+
+message Frequency {
+  int64 concept_id = 1;
+  repeated string names = 2;
+}
+
+message Route {
+  int64 concept_id = 1;
+  string abbreviation = 2;
+}
