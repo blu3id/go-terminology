@@ -40,6 +40,15 @@ var exportCmd = &cobra.Command{
 	},
 }
 
+var indexCmd = &cobra.Command{
+	Use:   "index <data-dir>",
+	Short: "Build search index from currently loaded data",
+	Long:  `Build the search index from currently loaded data.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return sct.Index()
+	},
+}
+
 var precomputeCmd = &cobra.Command{
 	Use:   "precompute <data-dir>",
 	Short: "Perform precomputations and optimisations",
@@ -76,5 +85,5 @@ var infoCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(dataCmd)
-	dataCmd.AddCommand(importCmd, exportCmd, precomputeCmd, resetCmd, infoCmd)
+	dataCmd.AddCommand(importCmd, exportCmd, indexCmd, precomputeCmd, resetCmd, infoCmd)
 }

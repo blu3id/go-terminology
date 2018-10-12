@@ -21,7 +21,7 @@ func (m *ParsedMedication) dailyEquivalentDose() float64 {
 	return 0
 }
 
-func (m *ParsedMedication) genString() string {
+func (m *ParsedMedication) BuildString() string {
 	var output string
 	if m.MappedDrugName == "" {
 		output = output + strings.Title(m.DrugName) + " "
@@ -72,7 +72,7 @@ func (m *ParsedMedication) MarshalJSON() ([]byte, error) {
 		AsRequired:          m.AsRequired,
 		ConceptId:           m.ConceptId,
 		Notes:               m.Notes,
-		String:              m.genString(),
+		String:              m.BuildString(),
 	})
 }
 

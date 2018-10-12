@@ -11,7 +11,7 @@ import (
 )
 
 var sct *terminology.Svc
-var profilecpu, version, build string
+var profilecpu, index, version, build string
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
@@ -33,14 +33,27 @@ var rootCmd = &cobra.Command{
 		}
 
 		readOnly := true
+		options := terminology.Options{
+			Index:         args[0],
+			IndexReadOnly: true,
+		}
+		// Overide options for index path it --index set to alternate directory
+		if index != "" {
+			options.Index = index
+		}
 		// Set readOnly to false if command in following map
 		readWriteCommands := map[string]bool{"import": true, "precompute": true, "reset": true}
 		if _, ok := readWriteCommands[cmd.CalledAs()]; ok {
 			readOnly = false
 		}
+		// Special case for index command
+		if cmd.CalledAs() == "index" {
+			readOnly = true
+			options.IndexReadOnly = false
+		}
 
 		// Create new terminology service
-		sct, err = terminology.New(args[0], readOnly)
+		sct, err = terminology.New(args[0], readOnly, options)
 		if err != nil {
 			return fmt.Errorf("couldn't open datastore: %v", err)
 		}
@@ -69,4 +82,5 @@ func Execute(version string, build string) {
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&profilecpu, "profile-cpu", "", "write cpu profile to `file` specified")
+	rootCmd.PersistentFlags().StringVar(&index, "index", "", "use specified `directory` for search index instead of defaulting to <data-dir>")
 }

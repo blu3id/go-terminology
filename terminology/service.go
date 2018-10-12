@@ -17,8 +17,12 @@ package terminology
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/wardle/go-terminology/snomed"
+	"github.com/wardle/go-terminology/terminology/medicine"
+	"github.com/wardle/go-terminology/terminology/search"
+	"github.com/wardle/go-terminology/terminology/search/bleve"
 	"github.com/wardle/go-terminology/terminology/storage"
 	"github.com/wardle/go-terminology/terminology/storage/boltdb"
 	"golang.org/x/text/language"
@@ -28,18 +32,48 @@ import (
 // providing semantic inference and a useful, practical SNOMED-CT API.
 type Svc struct {
 	storage.Store
+	search.Search
 	languageMatcher language.Matcher
+}
+
+// Options is a struct used as an argument to terminology.New() for setting an
+// alternate path and readOnly state for the search service instead of using
+// those specified for the persistence service
+type Options struct {
+	Index         string
+	IndexReadOnly bool
 }
 
 // New opens or creates a terminology service passing the specified location to
 // the persistence service
-func New(path string, readOnly bool) (*Svc, error) {
+func New(path string, readOnly bool, options ...Options) (*Svc, error) {
 	// Creates a new instance of the "boltdb" persistence service
 	bolt, err := boltdb.New(path, readOnly)
 	if err != nil {
 		return nil, err
 	}
-	return &Svc{Store: bolt}, nil
+
+	// Set default options for index and load values from options argument
+	var (
+		indexPath     = filepath.Join(path, "bleve_index")
+		indexReadOnly = readOnly
+	)
+	if len(options) > 0 {
+		indexPath = options[0].Index
+		indexReadOnly = options[0].IndexReadOnly
+		// Fix path if using default path
+		if path == options[0].Index {
+			indexPath = filepath.Join(path, "bleve_index")
+		}
+	}
+
+	// Creat a new instance of the "bleve" search service
+	bleve, err := bleve.New(indexPath, indexReadOnly)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Svc{Store: bolt, Search: bleve}, nil
 }
 
 // Close closes any open resources in the backend implementations
@@ -47,7 +81,10 @@ func (svc *Svc) Close() error {
 	if err := svc.Store.Close(); err != nil {
 		return err
 	}
-	return svc.Store.Close()
+	if err := svc.Search.Close(); err != nil {
+		return err
+	}
+	return nil
 }
 
 // IsA tests whether the given concept is a type of the specified
@@ -423,4 +460,34 @@ func (svc *Svc) GenericiseToRoot(concept *snomed.Concept, root int64) (*snomed.C
 		return nil, fmt.Errorf("Root concept of %d not found for concept %d", root, concept.Id)
 	}
 	return bestPath[bestPos-1], nil
+}
+
+func (svc *Svc) ParseMedicationString(medicationString string) (*medicine.ParsedMedication, error) {
+	parsedMedication := medicine.ParseMedicationString(medicationString)
+
+	var request snomed.SearchRequest
+	request.Search = parsedMedication.DrugName
+	request.RecursiveParentIds = []int64{373873005}
+	request.MaximumHits = 1
+	result, err := svc.Search.Search(&request)
+	if err != nil {
+		return &medicine.ParsedMedication{}, err
+	}
+
+	if len(result) == 1 {
+		description, err := svc.GetDescription(result[0])
+		if err != nil {
+			return &medicine.ParsedMedication{}, err
+		}
+		concept, err := svc.GetConcept(description.ConceptId)
+		if err != nil {
+			return &medicine.ParsedMedication{}, err
+		}
+		tags, _, _ := language.ParseAcceptLanguage("en-GB") //using hardcoded language TODO:Fix
+		preferredDescription := svc.MustGetPreferredSynonym(concept, tags)
+		parsedMedication.MappedDrugName = preferredDescription.Term
+		parsedMedication.ConceptId = description.ConceptId
+		parsedMedication.String_ = parsedMedication.BuildString()
+	}
+	return parsedMedication, nil
 }

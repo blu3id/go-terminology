@@ -1,6 +1,7 @@
 package server
 
 import (
+	"github.com/wardle/go-terminology/terminology"
 	"github.com/wardle/go-terminology/terminology/medicine"
 	"golang.org/x/net/context"
 )
@@ -8,9 +9,9 @@ import (
 // dmdSrv implements the medicine.dmdServer gRPC interface
 type dmdSrv struct {
 	medicine.DmdServer
+	svc *terminology.Svc
 }
 
 func (ds *dmdSrv) ParseMedication(ctx context.Context, medicationString *medicine.MedicationString) (*medicine.ParsedMedication, error) {
-	pm := medicine.ParseMedicationString(medicationString.S)
-	return pm, nil
+	return ds.svc.ParseMedicationString(medicationString.S)
 }

@@ -20,7 +20,8 @@ func serveGRPC(l net.Listener, sct *terminology.Svc) {
 	var gRPCOpts []grpc.ServerOption
 	gRPCServer := grpc.NewServer(gRPCOpts...)
 	snomed.RegisterSnomedCTServer(gRPCServer, &snomedCTSrv{svc: sct}) // Register SnomedCT Service
-	medicine.RegisterDmdServer(gRPCServer, &dmdSrv{})                 // Register dmd Service
+	snomed.RegisterSearchServer(gRPCServer, &searchSrv{svc: sct})     // Register Search Service
+	medicine.RegisterDmdServer(gRPCServer, &dmdSrv{svc: sct})         // Register dmd Service
 
 	if err := gRPCServer.Serve(l); err != nil {
 		log.Fatalf("Error while serving gRPC: %v", err)
@@ -37,6 +38,12 @@ func serveGRPCGateway(l net.Listener, host string) {
 	err := snomed.RegisterSnomedCTHandlerFromEndpoint(ctx, gRPCGateway, host, gRPCGatewayOpts)
 	if err != nil {
 		log.Fatalf("Error Registering SnomedCT gRPC Gateway Handler: %v", err)
+		return
+	}
+	// Register Search Service Gateway
+	err = snomed.RegisterSearchHandlerFromEndpoint(ctx, gRPCGateway, host, gRPCGatewayOpts)
+	if err != nil {
+		log.Fatalf("Error Registering Search gRPC Gateway Handler: %v", err)
 		return
 	}
 	// Register dmd Service Gateway

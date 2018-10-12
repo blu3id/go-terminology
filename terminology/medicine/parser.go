@@ -72,7 +72,7 @@ func ParseMedicationString(text string) *ParsedMedication {
 
 	medication.DailyEquivalentDose = medication.dailyEquivalentDose()
 	medication.EquivalentDose = medication.equivalentDose()
-	medication.String_ = medication.genString()
+	medication.String_ = medication.BuildString()
 
 	return &medication
 }
