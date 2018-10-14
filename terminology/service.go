@@ -467,7 +467,8 @@ func (svc *Svc) ParseMedicationString(medicationString string) (*medicine.Parsed
 
 	var request snomed.SearchRequest
 	request.Search = parsedMedication.DrugName
-	request.RecursiveParentIds = []int64{373873005}
+	request.RecursiveParentIds = []int64{10363701000001104} //Virtual therapeutic moiety (product) <- UK Specific
+	// request.RecursiveParentIds = []int64{373873005}      //Pharmaceutical / biologic product (product)
 	request.MaximumHits = 1
 	result, err := svc.Search.Search(&request)
 	if err != nil {

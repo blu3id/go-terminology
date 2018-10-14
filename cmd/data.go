@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -45,7 +46,9 @@ var indexCmd = &cobra.Command{
 	Short: "Build search index from currently loaded data",
 	Long:  `Build the search index from currently loaded data.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return sct.Index()
+		err := sct.Index()
+		time.Sleep(60 * time.Second) // Dirty hack for Bleve Moss storage to ensure data is written to disk
+		return err
 	},
 }
 

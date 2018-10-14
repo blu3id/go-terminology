@@ -1,19 +1,21 @@
 package bleve
 
 import (
-	"strconv"
-
-	blevesearch "github.com/blevesearch/bleve"
-	"github.com/blevesearch/bleve/analysis/analyzer/keyword"
+	"encoding/binary"
+	"fmt"
 
 	//dbq "github.com/blevesearch/bleve/search/query"
+	blevesearch "github.com/blevesearch/bleve"
+	"github.com/blevesearch/bleve/analysis/analyzer/keyword"
+	"github.com/blevesearch/bleve/index/store/goleveldb"
+	"github.com/blevesearch/bleve/index/store/moss"
+	"github.com/blevesearch/bleve/index/upsidedown"
 	"github.com/wardle/go-terminology/snomed"
 	"github.com/wardle/go-terminology/terminology/search"
 )
 
 // bleveIndexedDocument is a struct defining the document indexed by Bleve
 type bleveIndexedDocument struct {
-	SortWeight                string
 	Term                      string
 	PreferredTerm             string
 	ConceptId                 string
@@ -33,6 +35,25 @@ type bleveIndexedDocument struct {
 type bleveService struct {
 	index blevesearch.Index
 	_     search.Search
+}
+
+// []byte for int64 to binary conversion
+var bufer = make([]byte, binary.MaxVarintLen64)
+
+// itobs returns binary representation of int64 as a string - so conversion by
+// Bleve into []byte is efficent
+func itobs(v int64) string {
+	n := binary.PutVarint(bufer, v)
+	return string(bufer[:n])
+}
+
+// bstoi returns int64 of binary representation of int64 as a string
+func bstoi(b string) int64 {
+	x, n := binary.Varint([]byte(b))
+	if n != len(b) {
+		panic("Error decoding []byte to int64")
+	}
+	return x
 }
 
 func New(path string, readOnly bool) (search.Search, error) {
@@ -81,11 +102,8 @@ func New(path string, readOnly bool) (search.Search, error) {
 		mapping.AddDocumentMapping("bleveIndexedDocument", documentMapping)
 
 		/*
-			//moss index - fast indexing
-			kvconfig := map[string]interface{}{
-				"mossLowerLevelStoreName": "mossStore",
-			}
-			index, err = blevesearch.NewUsing(path, mapping, upsidedown.Name, moss.Name, kvconfig)
+			//bolt index (default) - space ineficient, slow indexing
+			index, err = blevesearch.New(path, mapping)
 		*/
 
 		/*
@@ -93,8 +111,12 @@ func New(path string, readOnly bool) (search.Search, error) {
 			index, err = blevesearch.NewUsing(path, mapping, upsidedown.Name, goleveldb.Name, map[string]interface{}{})
 		*/
 
-		//bolt index (default) - space ineficient, slow indexing
-		index, err = blevesearch.New(path, mapping)
+		//moss index - with goleveldb storage, fast indexing & space efficient
+		kvconfig := map[string]interface{}{
+			"mossLowerLevelStoreName": goleveldb.Name,
+		}
+		index, err = blevesearch.NewUsing(path, mapping, upsidedown.Name, moss.Name, kvconfig)
+
 	} else {
 		index, err = blevesearch.OpenUsing(path, map[string]interface{}{
 			"read_only": readOnly,
@@ -109,28 +131,28 @@ func (bs *bleveService) Index(eds []*snomed.ExtendedDescription) error {
 	for _, ed := range eds {
 		var doc bleveIndexedDocument
 
-		//Convert int64 to string as better efficiency in Bleve index as we aren't going to be doing range queries
+		//Convert int64 to binary encoded as string as better efficiency in Bleve index as we aren't going to be doing range queries
 		doc.Term = ed.Description.Term
 		doc.PreferredTerm = ed.PreferredDescription.Term
-		doc.ConceptId = strconv.FormatInt(ed.Concept.Id, 10)
+		doc.ConceptId = itobs(ed.Concept.Id)
 		doc.Language = ed.Description.LanguageCode
 		doc.DescriptionIsActive = ed.Description.Active
 		doc.ConceptIsActive = ed.Concept.Active
-		doc.DescriptionId = strconv.FormatInt(ed.Description.Id, 10)
-		doc.DescriptionType = strconv.FormatInt(ed.Description.TypeId, 10)
-		doc.ModuleId = strconv.FormatInt(ed.Description.ModuleId, 10)
+		doc.DescriptionId = itobs(ed.Description.Id)
+		doc.DescriptionType = itobs(ed.Description.TypeId)
+		doc.ModuleId = itobs(ed.Description.ModuleId)
 
 		for _, v := range ed.RecursiveParentIds {
-			doc.RecursiveParentConceptIds = append(doc.RecursiveParentConceptIds, strconv.FormatInt(v, 10))
+			doc.RecursiveParentConceptIds = append(doc.RecursiveParentConceptIds, itobs(v))
 		}
 		for _, v := range ed.DirectParentIds {
-			doc.DirectParentConceptIds = append(doc.DirectParentConceptIds, strconv.FormatInt(v, 10))
+			doc.DirectParentConceptIds = append(doc.DirectParentConceptIds, itobs(v))
 		}
 		for _, v := range ed.ConceptRefsets {
-			doc.ConceptRefsetIds = append(doc.ConceptRefsetIds, strconv.FormatInt(v, 10))
+			doc.ConceptRefsetIds = append(doc.ConceptRefsetIds, itobs(v))
 		}
 		for _, v := range ed.DescriptionRefsets {
-			doc.DescriptionRefsetIds = append(doc.DescriptionRefsetIds, strconv.FormatInt(v, 10))
+			doc.DescriptionRefsetIds = append(doc.DescriptionRefsetIds, itobs(v))
 		}
 
 		err := batch.Index(doc.DescriptionId, doc)
@@ -148,7 +170,7 @@ func (bs *bleveService) Search(search *snomed.SearchRequest) ([]int64, error) {
 	/*
 		// SearchRequest permits an arbitrary free-text search of the hierarchy.
 		message SearchRequest {
-			string search  = 1; // the search string
+			string search  = 1; 						// the search string
 			repeated int64 recursive_parent_ids = 2; 	// limit search to descendents of these parents
 			repeated int64 direct_parent_ids = 3; 		// limit search to direct descendents of these parents
 			repeated int64 reference_set_ids = 4; 		// limit search to members of the specified reference sets
@@ -164,6 +186,10 @@ func (bs *bleveService) Search(search *snomed.SearchRequest) ([]int64, error) {
 			}
 		}
 	*/
+
+	if search.Search == "" {
+		return []int64{}, fmt.Errorf("No search string in request")
+	}
 
 	if len(search.RecursiveParentIds) == 0 {
 		search.RecursiveParentIds = []int64{138875005}
@@ -211,7 +237,7 @@ func (bs *bleveService) Search(search *snomed.SearchRequest) ([]int64, error) {
 	query := blevesearch.NewConjunctionQuery(booleanQuery)
 
 	for _, refset := range search.ReferenceSetIds {
-		refsetQuery := blevesearch.NewTermQuery(strconv.FormatInt(refset, 10))
+		refsetQuery := blevesearch.NewTermQuery(itobs(refset))
 		refsetQuery.SetField("ConceptRefsetIds")
 		query.AddQuery(refsetQuery)
 	}
@@ -225,7 +251,7 @@ func (bs *bleveService) Search(search *snomed.SearchRequest) ([]int64, error) {
 	if len(search.RecursiveParentIds) > 0 {
 		recursiveDisjunctionQuery := blevesearch.NewDisjunctionQuery()
 		for _, recursiveParent := range search.RecursiveParentIds {
-			recursiveParentQuery := blevesearch.NewTermQuery(strconv.FormatInt(recursiveParent, 10))
+			recursiveParentQuery := blevesearch.NewTermQuery(itobs(recursiveParent))
 			recursiveParentQuery.SetField("RecursiveParentConceptIds")
 			recursiveDisjunctionQuery.AddQuery(recursiveParentQuery)
 		}
@@ -235,7 +261,7 @@ func (bs *bleveService) Search(search *snomed.SearchRequest) ([]int64, error) {
 	if len(search.DirectParentIds) > 0 {
 		directDisjunctionQuery := blevesearch.NewDisjunctionQuery()
 		for _, directParent := range search.DirectParentIds {
-			directParentQuery := blevesearch.NewTermQuery(strconv.FormatInt(directParent, 10))
+			directParentQuery := blevesearch.NewTermQuery(itobs(directParent))
 			directParentQuery.SetField("DirectParentConceptIds")
 			directDisjunctionQuery.AddQuery(directParentQuery)
 		}
@@ -257,7 +283,7 @@ func (bs *bleveService) Search(search *snomed.SearchRequest) ([]int64, error) {
 	var results []int64
 	for _, hit := range searchResults.Hits {
 		//conceptID, _ := strconv.ParseInt(hit.Fields["ConceptId"].(string), 10, 64)
-		descriptionID, _ := strconv.ParseInt(hit.ID, 10, 64)
+		descriptionID := bstoi(hit.ID)
 		results = append(results, descriptionID)
 	}
 

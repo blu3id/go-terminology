@@ -5,3 +5,4 @@ _REF2_data_files
 SNOMEDCT2*
 *.exe
 *.profile
+.clang-format
