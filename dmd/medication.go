@@ -1,4 +1,4 @@
-package medicine
+package dmd
 
 import (
 	"encoding/json"
@@ -6,9 +6,9 @@ import (
 	"strings"
 )
 
-//go:generate protoc -I. --go_out=plugins=gprc:. medicine.proto
-//go:generate protoc -I. -I../../vendor/terminology/vendor/googleapis --go_out=plugins=grpc:. dmdservice.proto
-//go:generate protoc -I. -I../../vendor/terminology/vendor/googleapis --grpc-gateway_out=logtostderr=true:. dmdservice.proto
+//go:generate protoc --go_out=plugins=gprc:. medication.proto
+//go:generate protoc -I. -I../vendor/terminology/vendor/googleapis --go_out=plugins=grpc:. server.proto
+//go:generate protoc -I. -I../vendor/terminology/vendor/googleapis --grpc-gateway_out=logtostderr=true:. server.proto
 
 func (m *ParsedMedication) equivalentDose() float64 {
 	return m.Units.Conversion() * m.Dose

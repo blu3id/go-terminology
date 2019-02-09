@@ -17,10 +17,11 @@ package terminology
 
 import (
 	"fmt"
+	"log"
 	"path/filepath"
+	"strings"
 
 	"github.com/wardle/go-terminology/snomed"
-	"github.com/wardle/go-terminology/terminology/medicine"
 	"github.com/wardle/go-terminology/terminology/search"
 	"github.com/wardle/go-terminology/terminology/search/bleve"
 	"github.com/wardle/go-terminology/terminology/storage"
@@ -462,33 +463,35 @@ func (svc *Svc) GenericiseToRoot(concept *snomed.Concept, root int64) (*snomed.C
 	return bestPath[bestPos-1], nil
 }
 
-func (svc *Svc) ParseMedicationString(medicationString string) (*medicine.ParsedMedication, error) {
-	parsedMedication := medicine.ParseMedicationString(medicationString)
-
-	var request snomed.SearchRequest
-	request.Search = parsedMedication.DrugName
-	request.RecursiveParentIds = []int64{10363701000001104} //Virtual therapeutic moiety (product) <- UK Specific
-	// request.RecursiveParentIds = []int64{373873005}      //Pharmaceutical / biologic product (product)
-	request.MaximumHits = 1
-	result, err := svc.Search.Search(&request)
+// Version prints version info of currently loaded data
+func (svc *Svc) Version() error {
+	var s, u, d string
+	rootConcept, err := svc.GetConcept(138875005)
 	if err != nil {
-		return &medicine.ParsedMedication{}, err
+		return err
 	}
-
-	if len(result) == 1 {
-		description, err := svc.GetDescription(result[0])
-		if err != nil {
-			return &medicine.ParsedMedication{}, err
-		}
-		concept, err := svc.GetConcept(description.ConceptId)
-		if err != nil {
-			return &medicine.ParsedMedication{}, err
-		}
-		tags, _, _ := language.ParseAcceptLanguage("en-GB") //using hardcoded language TODO:Fix
-		preferredDescription := svc.MustGetPreferredSynonym(concept, tags)
-		parsedMedication.MappedDrugName = preferredDescription.Term
-		parsedMedication.ConceptId = description.ConceptId
-		parsedMedication.String_ = parsedMedication.BuildString()
+	descriptions, err := svc.GetDescriptions(rootConcept)
+	if err != nil {
+		return err
 	}
-	return parsedMedication, nil
+	for _, description := range descriptions {
+		if description.Active {
+			// SNOMED CT Version
+			if description.ModuleId == 900000000000207008 {
+				if strings.HasPrefix(description.Term, "SNOMED Clinical Terms version") {
+					s = description.Term
+				}
+			}
+			// SNOMED CT United Kingdom drug extension
+			if description.ModuleId == 999000011000001104 {
+				d = description.Term
+			}
+			// SNOMED CT United Kingdom clinical extension
+			if description.ModuleId == 999000011000000103 {
+				u = description.Term
+			}
+		}
+	}
+	log.Printf("Terminology using: \n	%s\n	%s\n	%s\n\n", s, u, d)
+	return nil
 }

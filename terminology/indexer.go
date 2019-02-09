@@ -20,13 +20,8 @@ func (svc *Svc) Index() error {
 		indexChn    = make(chan snomed.ExtendedDescription, 1000) // Create buffered channel
 	)
 	go func() {
-		var count = 0
 		svc.Iterate(func(concept *snomed.Concept) error {
 			conceptsChn <- *concept
-			count++
-			if count == 10000 {
-				return fmt.Errorf("Break")
-			}
 			return nil
 		})
 		close(conceptsChn) // Close conceptsChn to signal to buildExtendedDescriptionsFromConcept goroutines to return

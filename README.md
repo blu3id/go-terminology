@@ -24,3 +24,7 @@ as far as I know, the first Golang implementation of SNOMED-CT. It uses protobuf
 It is still in active development but is now in production-use. It can drive a [fast free-text search engine](https://github.com/wardle/rsterminology2) by exporting an optimised protobuf-based index. It can import a SNOMED-CT distribution and has no runtime dependencies except a filesystem. Importantly, it supports read-only operation from a shared filesystem making it ideal for use as a scalable microservice.
 
 *Mark*
+
+
+go build -ldflags="-s -w"
+go generate ./...

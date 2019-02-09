@@ -1,4 +1,4 @@
-package medicine
+package dmd
 
 import (
 	"errors"

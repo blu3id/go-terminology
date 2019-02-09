@@ -19,7 +19,7 @@ var serverCmd = &cobra.Command{
 	Short: "Runs the terminology server",
 	Long:  `The server command runs the terminology server.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		server.Serve(sct, address+":"+strconv.Itoa(port))
+		server.Serve(sct, mds, address+":"+strconv.Itoa(port))
 		return nil
 	},
 }

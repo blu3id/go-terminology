@@ -1,0 +1,176 @@
+syntax = "proto3";
+package dmd;
+
+option go_package = "dmd";
+
+// This is an incomplete representation (with additions) of a Virtual
+// Therapeutic Moiety as specified in the dm+d not all fields have been
+// implemented or mapped as they are currently superfluous to the use case.
+message VirtualTherapeuticMoiety {
+  int64 id = 1;
+  string name = 2;
+
+  repeated int64 virtual_medicinal_products = 3;
+}
+
+// This is an incomplete representation (with additions) of a Virtual Medicinal
+// Product as specified in the dm+d not all fields have been implemented or
+// mapped as they are currently superfluous to the use case.
+message VirtualMedicinalProduct {
+  int64 id = 1;
+  int64 virtual_therapeutic_moiety_id = 2;
+  string name = 3;
+  CombinationProduct combination_product = 4;
+  PrescribingStatus prescribing_status = 5;
+  NonAvailability non_availability = 6;
+  DoseForm dose_form = 7;
+  double unit_dose_form_size = 8;
+  int64 unit_dose_form_units = 9;
+  int64 unit_dose_units = 10;
+  repeated Ingredient ingredients = 11;
+  repeated int64 drug_form = 12;
+  repeated int64 drug_route = 13;
+  ControledDrugCategory controled_drug_category = 14;
+
+  repeated int64 actual_medicinal_products = 15;
+
+  // Nb These are hard coded values as mostly static but can change and are
+  // specified in f_lookup2_<release>.xml under `COMBINATION_PROD_IND`
+  enum CombinationProduct {
+    NOT_SET = 0;
+    COMBINATION_PRODUCT = 1;
+    COMPONENT_ONLY_PRODUCT = 2;
+  }
+
+  // Nb These are hard coded values as mostly static but can change and are
+  // specified in f_lookup2_<release>.xml under `VIRTUAL_PRODUCT_PRES_STATUS`
+  enum PrescribingStatus {
+    STATUS_NOT_SET = 0;
+    VALID_AS_PRESCRIBABLE_PRODUCT = 1;
+    INVALID_IN_NHS_PRIMARY_CARE = 2;
+    ONLY_AMP_PRESCRIBABLE = 3;
+    NEVER_VALID_AS_VMP = 4;
+    NOT_RECOMMENDED_AS_VMP = 5;
+    VMP_NOT_RECOMMENDED_BRANDS_NOT_BIOEQUIVALENT = 6;
+    VMP_NOT_RECOMMENDED_PATIENT_TRAINING_REQ = 7;
+    VMP_NOT_RECOMMENDED_NO_PUBLISHED_SPEC = 8;
+  }
+
+  // Nb These are hard coded values as mostly static but can change and are
+  // specified in f_lookup2_<release>.xml under `VIRTUAL_PRODUCT_NON_AVAIL`
+  enum NonAvailability {
+    PRODUCTS_AVAILABLE = 0;
+    PRODUCTS_NOT_AVAILABLE = 1;
+  }
+
+  // Nb These are hard coded values as mostly static but can change and are
+  // specified in f_lookup2_<release>.xml under `DF_INDICATOR`
+  enum DoseForm {
+    FORM_NOT_SET = 0;
+    DISCRETE = 1;
+    CONTINUOUS = 2;
+    NOT_APPLICABLE = 3;
+  }
+
+  // Nb These are hard coded values as mostly static but can change and are
+  // specified in f_lookup2_<release>.xml under `CONTROL_DRUG_CATEGORY`
+  enum ControledDrugCategory {
+    NO_CONTROLLED_DRUG_STATUS = 0;
+    SCHEDULE_1_CD_LIC = 1;
+    SCHEDULE_2_CD = 2;
+    SCHEDULE_2_CD_EXEMPT_SAFE_CUSTODY = 3;
+    SCHEDULE_3_CD_NO_REGISTER = 4;
+    SCHEDULE_3_CD_NO_REGISTER_EXEMPT_SAFE_CUSTODY = 5;
+    SCHEDULE_3_CD_NO_REGISTER_PHENOBARBITAL = 6;
+    SCHEDULE_3_CD_NO_REGISTER_TEMAZEPAM = 7;
+    SCHEDULE_4_CD_ANAB = 8;
+    SCHEDULE_4_CD_BENZ = 9;
+    SCHEDULE_5_CD_INV = 10;
+  }
+
+  // Representation of the a `Virtual Product Ingredient` from dm+d
+  message Ingredient {
+    int64 ingredient = 2;
+    BasisOfStrength basis_of_strength = 3;
+    int64 basis_of_strength_substance = 4;
+    double strength_numerator = 5;
+    int64 strength_numerator_unit = 6;
+    double strength_denominator = 7;
+    int64 strength_denominator_unit = 8;
+
+    // Nb These are hard coded values as mostly static but can change and are
+    // specified in f_lookup2_<release>.xml under `BASIS_OF_STRNTH`
+    enum BasisOfStrength {
+      BASIS_NOT_SET = 0;
+      BASED_ON_INGREDIENT = 1;
+      BASED_ON_BASE = 2;
+    }
+  }
+}
+
+// This is an incomplete representation of a Actual Medicinal Product as
+// specified in the dm+d not all fields have been implemented or mapped as they
+// are currently superfluous to the use case.
+message ActualMedicinalProduct {
+  int64 id = 1;
+  int64 virtual_medicinal_product_id = 2;
+  string name = 3;
+  string description = 4;
+  int64 supplier = 5;
+  LicensingAuthority licensing_authority = 6;
+  AvailabilityRestriction availability_restriction = 7;
+  repeated int64 licensed_route = 8;
+
+  // Nb These are hard coded values as mostly static but can change and are
+  // specified in f_lookup2_<release>.xml under `LICENSING_AUTHORITY`
+  enum LicensingAuthority {
+    NONE = 0;
+    MEDICINES_MHRA_EMA = 1;
+    DEVICES = 2;
+    UNKNOWN = 3;
+    TRADITIONAL_HERBAL_MEDICINES = 4;
+  }
+
+  // Nb These are hard coded values as mostly static but can change and are
+  // specified in f_lookup2_<release>.xml under `AVAILABILITY_RESTRICTION`
+  enum AvailabilityRestriction {
+    AVAILABILITY_NOT_SET = 0;
+    NO_RESTRICTIONS = 1;
+    RESTRICTED_AVAILABILITY = 2;
+    INDIVIDUAL_PATIENT_SUPPLY = 3;
+    IMPORTED = 4;
+    CLINICAL_TRIAL = 5;
+    SPECIAL = 6;
+    EXTEMP = 7;
+    HOSPITAL_ONLY = 8;
+    NOT_AVAILABLE = 9;
+  }
+}
+
+// This is a representation of the Medication Types Spec Data Specifications as
+// described in the UKDrugsBonusFiles in the SNOMEDCT UK Drug distribution in
+// the `UK_SNOMED_CT_Medication_Types_Spec_Data_Specifications_<version>.xml`
+// file.
+message MedicationTypeAttributes {
+  string id = 1;
+  string name = 2;
+  string usage = 3;
+
+  repeated string required_attributes = 4;
+  repeated string optional_attributes = 5;
+}
+
+// This is a representation of the Medication Types Form Route Pairs as
+// described in the UKDrugsBonusFiles in the SNOMEDCT UK Drug distribution in
+// the `UK_SNOMED_CT_Medication_Types_Form_Route_Pairs_<version>.xml` file.
+message MedicationTypeMapping {
+  int32 id = 1;
+  string name = 2;
+
+  repeated FormRoutePair form_route_pairs = 3;
+
+  message FormRoutePair {
+    int64 form = 1;
+    int64 route = 2;
+  }
+}

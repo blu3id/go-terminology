@@ -1,0 +1,58 @@
+syntax = "proto3";
+package dmd;
+
+option go_package = "dmd";
+
+import "medication.proto";
+import "dmd.proto";
+import "google/api/annotations.proto";
+
+message MedicationString {
+  string s = 1;
+}
+
+message ItemID {
+  int64 id = 1;
+}
+
+message MedicationType {
+  string id = 1;
+}
+
+service dmd {
+  rpc ParseMedication(MedicationString) returns (ParsedMedication) {
+    option (google.api.http) = {
+      get: "/v1/dmd/parse"
+    };
+  };
+
+  rpc GetVTM(ItemID) returns (VirtualTherapeuticMoiety) {
+    option (google.api.http) = {
+      get: "/v1/dmd/vtm/{id}"
+    };
+  };
+
+  rpc GetVMP(ItemID) returns (VirtualMedicinalProduct) {
+    option (google.api.http) = {
+      get: "/v1/dmd/vmp/{id}"
+    };
+  };
+
+  rpc GetAMP(ItemID) returns (ActualMedicinalProduct) {
+    option (google.api.http) = {
+      get: "/v1/dmd/amp/{id}"
+    };
+  };
+
+  rpc GetTypeAttributes(MedicationType) returns (MedicationTypeAttributes) {
+    option (google.api.http) = {
+      get: "/v1/dmd/attributes/{id}"
+    };
+  };
+
+  rpc GetMedicationType(MedicationTypeMapping.FormRoutePair) returns (MedicationTypeMapping) {
+    option (google.api.http) = {
+      get: "/v1/dmd/type/{form}/{route}"
+    };
+  };
+}

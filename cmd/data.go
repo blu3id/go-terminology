@@ -10,8 +10,8 @@ import (
 // dataCmd represents the data command
 var dataCmd = &cobra.Command{
 	Use:   "data",
-	Short: "Commands for import, export and management of data",
-	Long:  `Commands for import, export and management of data.`,
+	Short: "Commands for import, export and management of terminology data",
+	Long:  `Commands for import, export and management of terminology data.`,
 }
 
 var importCmd = &cobra.Command{

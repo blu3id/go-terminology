@@ -1,81 +1,40 @@
 package bleve
 
 import (
-	"context"
-	"encoding/binary"
-	"fmt"
-	"time"
+	"strconv"
 
-	//dbq "github.com/blevesearch/bleve/search/query"
 	blevesearch "github.com/blevesearch/bleve"
 	"github.com/blevesearch/bleve/analysis/analyzer/keyword"
 	"github.com/blevesearch/bleve/index/store/goleveldb"
 	"github.com/blevesearch/bleve/index/store/moss"
 	"github.com/blevesearch/bleve/index/upsidedown"
+
+	//dbq "github.com/blevesearch/bleve/search/query"
 	"github.com/wardle/go-terminology/snomed"
 	"github.com/wardle/go-terminology/terminology/search"
 )
 
-// bleveIndexedDocument is a struct defining the document indexed by Bleve
-type bleveIndexedDocument struct {
-	Term                      string
-	PreferredTerm             string
-	ConceptId                 string
-	RecursiveParentConceptIds []string
-	DirectParentConceptIds    []string
-	Language                  string
-	DescriptionIsActive       bool
-	ConceptIsActive           bool
-	DescriptionId             string
-	DescriptionType           string
-	ModuleId                  string
-	ConceptRefsetIds          []string
-	DescriptionRefsetIds      []string
+// bleveDmdIndexedDocument is a struct defining the document indexed by Bleve
+type bleveDmdIndexedDocument struct {
+	ActiveIngredientCount    string
+	DispensedDoseForm        string
+	BoSS                     []string
+	StrengthNumerator        []string
+	StrengthNumeratorUnits   []string
+	StrengthDenominator      []string
+	StrengthDenominatorUnits []string
 }
 
-// bleveService is a search service for SNOMED-CT that implements the search.Search interface
-type bleveService struct {
+// bleveDmdService is a search service for SNOMED-CT that implements the search.Search interface
+type bleveDmdService struct {
 	index blevesearch.Index
 	_     search.Search
 }
 
-// []byte for int64 to binary conversion
-var bufer = make([]byte, binary.MaxVarintLen64)
-
-// itobs returns binary representation of int64 as a string - so conversion by
-// Bleve into []byte is efficent
-func itobs(v int64) string {
-	n := binary.PutVarint(bufer, v)
-	return string(bufer[:n])
-}
-
-// bstoi returns int64 of binary representation of int64 as a string
-func bstoi(b string) int64 {
-	x, n := binary.Varint([]byte(b))
-	if n != len(b) {
-		panic("Error decoding []byte to int64")
-	}
-	return x
-}
-
-func New(path string, readOnly bool) (search.Search, error) {
+func NewDmd(path string, readOnly bool) (search.Search, error) {
 	var index blevesearch.Index
 	var err error
 	if !readOnly {
-
-		textMapping := blevesearch.NewTextFieldMapping()
-		textMapping.IncludeInAll = false
-		textMapping.Store = false
-
-		boolMapping := blevesearch.NewBooleanFieldMapping()
-		boolMapping.IncludeInAll = false
-		boolMapping.Store = false
-
-		storedIDMapping := blevesearch.NewTextFieldMapping()
-		storedIDMapping.IncludeInAll = false
-		storedIDMapping.IncludeTermVectors = false
-		storedIDMapping.Store = true
-		storedIDMapping.Analyzer = keyword.Name
 
 		idMapping := blevesearch.NewTextFieldMapping()
 		idMapping.IncludeInAll = false
@@ -84,77 +43,60 @@ func New(path string, readOnly bool) (search.Search, error) {
 		idMapping.Analyzer = keyword.Name
 
 		documentMapping := blevesearch.NewDocumentMapping()
-		documentMapping.AddFieldMappingsAt("Term", textMapping)
-		documentMapping.AddFieldMappingsAt("PreferredTerm", textMapping)
-		documentMapping.AddFieldMappingsAt("ConceptId", storedIDMapping)
-		documentMapping.AddFieldMappingsAt("RecursiveParentConceptIds", idMapping)
-		documentMapping.AddFieldMappingsAt("DirectParentConceptIds", idMapping)
-		documentMapping.AddFieldMappingsAt("Language", idMapping)
-		documentMapping.AddFieldMappingsAt("DescriptionIsActive", boolMapping)
-		documentMapping.AddFieldMappingsAt("ConceptIsActive", boolMapping)
-		documentMapping.AddFieldMappingsAt("DescriptionId", idMapping)
-		documentMapping.AddFieldMappingsAt("DescriptionType", idMapping)
-		documentMapping.AddFieldMappingsAt("ModuleId", idMapping)
-		documentMapping.AddFieldMappingsAt("ConceptRefsetIds", idMapping)
-		documentMapping.AddFieldMappingsAt("DescriptionRefsetIds", idMapping)
+		documentMapping.AddFieldMappingsAt("ActiveingredientCount", idMapping)
+		documentMapping.AddFieldMappingsAt("DispensedDoseForm", idMapping)
+		documentMapping.AddFieldMappingsAt("BoSS", idMapping)
+		documentMapping.AddFieldMappingsAt("StrengthNumerator", idMapping)
+		documentMapping.AddFieldMappingsAt("StrengthNumeratorUnits", idMapping)
+		documentMapping.AddFieldMappingsAt("StrengthDenominator", idMapping)
+		documentMapping.AddFieldMappingsAt("StrengthDenominatorUnits", idMapping)
 
 		mapping := blevesearch.NewIndexMapping()
 		mapping.StoreDynamic = false
-		mapping.DefaultType = "bleveIndexedDocument"
-		mapping.AddDocumentMapping("bleveIndexedDocument", documentMapping)
-
-		/*
-			//bolt index (default) - space ineficient, slow indexing
-			index, err = blevesearch.New(path, mapping)
-		*/
-
-		/*
-			//goleveldb index - space efficient as slow as bolt indexing TODO: Optimise compaction with options
-			index, err = blevesearch.NewUsing(path, mapping, upsidedown.Name, goleveldb.Name, map[string]interface{}{})
-		*/
+		mapping.DefaultType = "bleveDmdIndexedDocument"
+		mapping.AddDocumentMapping("bleveDmdIndexedDocument", documentMapping)
 
 		//moss index - with goleveldb storage, fast indexing & space efficient
 		kvconfig := map[string]interface{}{
 			"mossLowerLevelStoreName": goleveldb.Name,
 		}
 		index, err = blevesearch.NewUsing(path, mapping, upsidedown.Name, moss.Name, kvconfig)
-
 	} else {
 		index, err = blevesearch.OpenUsing(path, map[string]interface{}{
 			"read_only": readOnly,
 		})
 	}
-	return &bleveService{index: index}, err
+	return &bleveDmdService{index: index}, err
 }
 
-func (bs *bleveService) Index(eds []*snomed.ExtendedDescription) error {
+func (bs *bleveDmdService) Index(eds []*snomed.ExtendedDescription) error {
 	batch := bs.index.NewBatch()
 
 	for _, ed := range eds {
-		var doc bleveIndexedDocument
+		var doc bleveDmdIndexedDocument
 
-		//Convert int64 to binary encoded as string as better efficiency in Bleve index as we aren't going to be doing range queries
+		//Convert int64 to string as better efficiency in Bleve index as we aren't going to be doing range queries
 		doc.Term = ed.Description.Term
 		doc.PreferredTerm = ed.PreferredDescription.Term
-		doc.ConceptId = itobs(ed.Concept.Id)
+		doc.ConceptId = strconv.FormatInt(ed.Concept.Id, 10)
 		doc.Language = ed.Description.LanguageCode
 		doc.DescriptionIsActive = ed.Description.Active
 		doc.ConceptIsActive = ed.Concept.Active
-		doc.DescriptionId = itobs(ed.Description.Id)
-		doc.DescriptionType = itobs(ed.Description.TypeId)
-		doc.ModuleId = itobs(ed.Description.ModuleId)
+		doc.DescriptionId = strconv.FormatInt(ed.Description.Id, 10)
+		doc.DescriptionType = strconv.FormatInt(ed.Description.TypeId, 10)
+		doc.ModuleId = strconv.FormatInt(ed.Description.ModuleId, 10)
 
 		for _, v := range ed.RecursiveParentIds {
-			doc.RecursiveParentConceptIds = append(doc.RecursiveParentConceptIds, itobs(v))
+			doc.RecursiveParentConceptIds = append(doc.RecursiveParentConceptIds, strconv.FormatInt(v, 10))
 		}
 		for _, v := range ed.DirectParentIds {
-			doc.DirectParentConceptIds = append(doc.DirectParentConceptIds, itobs(v))
+			doc.DirectParentConceptIds = append(doc.DirectParentConceptIds, strconv.FormatInt(v, 10))
 		}
 		for _, v := range ed.ConceptRefsets {
-			doc.ConceptRefsetIds = append(doc.ConceptRefsetIds, itobs(v))
+			doc.ConceptRefsetIds = append(doc.ConceptRefsetIds, strconv.FormatInt(v, 10))
 		}
 		for _, v := range ed.DescriptionRefsets {
-			doc.DescriptionRefsetIds = append(doc.DescriptionRefsetIds, itobs(v))
+			doc.DescriptionRefsetIds = append(doc.DescriptionRefsetIds, strconv.FormatInt(v, 10))
 		}
 
 		err := batch.Index(doc.DescriptionId, doc)
@@ -168,11 +110,11 @@ func (bs *bleveService) Index(eds []*snomed.ExtendedDescription) error {
 	return err
 }
 
-func (bs *bleveService) Search(search *snomed.SearchRequest) ([]int64, error) {
+func (bs *bleveDmdService) Search(search *snomed.SearchRequest) ([]int64, error) {
 	/*
 		// SearchRequest permits an arbitrary free-text search of the hierarchy.
 		message SearchRequest {
-			string search  = 1; 						// the search string
+			string search  = 1; // the search string
 			repeated int64 recursive_parent_ids = 2; 	// limit search to descendents of these parents
 			repeated int64 direct_parent_ids = 3; 		// limit search to direct descendents of these parents
 			repeated int64 reference_set_ids = 4; 		// limit search to members of the specified reference sets
@@ -189,10 +131,6 @@ func (bs *bleveService) Search(search *snomed.SearchRequest) ([]int64, error) {
 		}
 	*/
 
-	if search.Search == "" {
-		return []int64{}, fmt.Errorf("No search string in request")
-	}
-
 	if len(search.RecursiveParentIds) == 0 {
 		search.RecursiveParentIds = []int64{138875005}
 	}
@@ -204,13 +142,6 @@ func (bs *bleveService) Search(search *snomed.SearchRequest) ([]int64, error) {
 	mapping := bs.index.Mapping()
 	analyzer := mapping.AnalyzerNamed(mapping.AnalyzerNameForPath("Term"))
 	tokens := analyzer.Analyze([]byte(search.Search))
-
-	// Handle edge case where tokenised search string is null (as string is only
-	// stop words/characters)
-	if len(tokens) == 0 {
-		return []int64{}, nil
-	}
-
 	booleanQuery := blevesearch.NewBooleanQuery()
 	for _, token := range tokens {
 		tokenString := string(token.Term)
@@ -239,14 +170,14 @@ func (bs *bleveService) Search(search *snomed.SearchRequest) ([]int64, error) {
 	}
 
 	//Exclude FSN (no current option to disable in snomed.SearchRequest)
-	excludeFSNQuery := blevesearch.NewTermQuery(itobs(900000000000003001))
+	excludeFSNQuery := blevesearch.NewTermQuery("900000000000003001")
 	excludeFSNQuery.SetField("DescriptionType")
 	booleanQuery.AddMustNot(excludeFSNQuery)
 
 	query := blevesearch.NewConjunctionQuery(booleanQuery)
 
 	for _, refset := range search.ReferenceSetIds {
-		refsetQuery := blevesearch.NewTermQuery(itobs(refset))
+		refsetQuery := blevesearch.NewTermQuery(strconv.FormatInt(refset, 10))
 		refsetQuery.SetField("ConceptRefsetIds")
 		query.AddQuery(refsetQuery)
 	}
@@ -260,7 +191,7 @@ func (bs *bleveService) Search(search *snomed.SearchRequest) ([]int64, error) {
 	if len(search.RecursiveParentIds) > 0 {
 		recursiveDisjunctionQuery := blevesearch.NewDisjunctionQuery()
 		for _, recursiveParent := range search.RecursiveParentIds {
-			recursiveParentQuery := blevesearch.NewTermQuery(itobs(recursiveParent))
+			recursiveParentQuery := blevesearch.NewTermQuery(strconv.FormatInt(recursiveParent, 10))
 			recursiveParentQuery.SetField("RecursiveParentConceptIds")
 			recursiveDisjunctionQuery.AddQuery(recursiveParentQuery)
 		}
@@ -270,7 +201,7 @@ func (bs *bleveService) Search(search *snomed.SearchRequest) ([]int64, error) {
 	if len(search.DirectParentIds) > 0 {
 		directDisjunctionQuery := blevesearch.NewDisjunctionQuery()
 		for _, directParent := range search.DirectParentIds {
-			directParentQuery := blevesearch.NewTermQuery(itobs(directParent))
+			directParentQuery := blevesearch.NewTermQuery(strconv.FormatInt(directParent, 10))
 			directParentQuery.SetField("DirectParentConceptIds")
 			directDisjunctionQuery.AddQuery(directParentQuery)
 		}
@@ -284,10 +215,7 @@ func (bs *bleveService) Search(search *snomed.SearchRequest) ([]int64, error) {
 	searchRequest.Size = int(search.MaximumHits)
 	searchRequest.Fields = []string{"ConceptId"}
 
-	// Set time-out on search requests (default to 5 seconds) to avoid resource exhaustion
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	searchResults, err := bs.index.SearchInContext(ctx, searchRequest)
+	searchResults, err := bs.index.Search(searchRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -295,7 +223,7 @@ func (bs *bleveService) Search(search *snomed.SearchRequest) ([]int64, error) {
 	var results []int64
 	for _, hit := range searchResults.Hits {
 		//conceptID, _ := strconv.ParseInt(hit.Fields["ConceptId"].(string), 10, 64)
-		descriptionID := bstoi(hit.ID)
+		descriptionID, _ := strconv.ParseInt(hit.ID, 10, 64)
 		results = append(results, descriptionID)
 	}
 
@@ -307,6 +235,6 @@ func (bs *bleveService) Search(search *snomed.SearchRequest) ([]int64, error) {
 	return results, nil
 }
 
-func (bs *bleveService) Close() error {
+func (bs *bleveDmdService) Close() error {
 	return bs.index.Close()
 }

@@ -8,20 +8,21 @@ import (
 
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/soheilhy/cmux"
+	"github.com/wardle/go-terminology/dmd"
+	"github.com/wardle/go-terminology/medicine"
 	"github.com/wardle/go-terminology/snomed"
 	"github.com/wardle/go-terminology/terminology"
-	"github.com/wardle/go-terminology/terminology/medicine"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 )
 
-func serveGRPC(l net.Listener, sct *terminology.Svc) {
+func serveGRPC(l net.Listener, sct *terminology.Svc, mds *medicine.Svc) {
 	// Register gRPC Services
 	var gRPCOpts []grpc.ServerOption
 	gRPCServer := grpc.NewServer(gRPCOpts...)
 	snomed.RegisterSnomedCTServer(gRPCServer, &snomedCTSrv{svc: sct}) // Register SnomedCT Service
 	snomed.RegisterSearchServer(gRPCServer, &searchSrv{svc: sct})     // Register Search Service
-	medicine.RegisterDmdServer(gRPCServer, &dmdSrv{svc: sct})         // Register dmd Service
+	dmd.RegisterDmdServer(gRPCServer, &dmdSrv{svc: mds})              // Register dm+d Service
 
 	if err := gRPCServer.Serve(l); err != nil {
 		log.Fatalf("Error while serving gRPC: %v", err)
@@ -47,7 +48,7 @@ func serveGRPCGateway(l net.Listener, host string) {
 		return
 	}
 	// Register dmd Service Gateway
-	err = medicine.RegisterDmdHandlerFromEndpoint(ctx, gRPCGateway, host, gRPCGatewayOpts)
+	err = dmd.RegisterDmdHandlerFromEndpoint(ctx, gRPCGateway, host, gRPCGatewayOpts)
 	if err != nil {
 		log.Fatalf("Error Registering dmd gRPC Gateway Handler: %v", err)
 		return
@@ -62,7 +63,7 @@ func serveGRPCGateway(l net.Listener, host string) {
 // Serve starts listening on host (interface:port) for either gRPC requests or
 // HTTP request and passess connections onto appropriate handler. HTTP requests
 // are passed through gRPC Gateway HTTP Reverse Proxy and back to gRPC server.
-func Serve(sct *terminology.Svc, host string) {
+func Serve(sct *terminology.Svc, mds *medicine.Svc, host string) {
 	// Create a listener at the desired port.
 	l, err := net.Listen("tcp", host)
 	defer l.Close()
@@ -78,7 +79,7 @@ func Serve(sct *terminology.Svc, host string) {
 	http := tcpm.Match(cmux.HTTP1Fast())
 
 	// Initialize the servers by passing in the custom listeners (sub-listeners).
-	go serveGRPC(grpc, sct)
+	go serveGRPC(grpc, sct, mds)
 	go serveGRPCGateway(http, host)
 	log.Println("gRPC and HTTP server listening on", host)
 
