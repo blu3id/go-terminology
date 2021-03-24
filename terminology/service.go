@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -30,6 +31,7 @@ import (
 	"time"
 
 	"github.com/golang/protobuf/ptypes"
+	"github.com/schollz/progressbar/v3"
 	"github.com/wardle/go-terminology/snomed"
 	"golang.org/x/text/language"
 	"google.golang.org/protobuf/proto"
@@ -948,7 +950,7 @@ func (svc *Svc) Statistics(lang string, verbose bool) (Statistics, error) {
 	if err != nil {
 		return stats, err
 	}
-	stats.searchIndex, err = svc.search.Statistics()
+	stats.SearchIndex, err = svc.search.Statistics()
 	if err != nil {
 		return stats, err
 	}
@@ -965,10 +967,10 @@ func (svc *Svc) Statistics(lang string, verbose bool) (Statistics, error) {
 						fmt.Printf("\r%c %4s: %d concepts, %d descriptions, %d relationships and %d refset items...",
 							r,
 							time.Since(start),
-							atomic.LoadUint64(&stats.concepts),
-							atomic.LoadUint64(&stats.descriptions),
-							atomic.LoadUint64(&stats.relationships),
-							atomic.LoadUint64(&stats.refsetItems))
+							atomic.LoadUint64(&stats.Concepts),
+							atomic.LoadUint64(&stats.Descriptions),
+							atomic.LoadUint64(&stats.Relationships),
+							atomic.LoadUint64(&stats.RefsetItems))
 						time.Sleep(50 * time.Millisecond)
 					}
 				}
@@ -980,22 +982,22 @@ func (svc *Svc) Statistics(lang string, verbose bool) (Statistics, error) {
 	cWg.Add(1)
 	go func() {
 		defer cWg.Done()
-		svc.countBucket(bkConcepts, &stats.concepts)
+		svc.countBucket(bkConcepts, &stats.Concepts)
 	}()
 	dWg.Add(1)
 	go func() {
 		defer dWg.Done()
-		svc.countBucket(bkDescriptions, &stats.descriptions)
+		svc.countBucket(bkDescriptions, &stats.Descriptions)
 	}()
 	relWg.Add(1)
 	go func() {
 		defer relWg.Done()
-		svc.countBucket(bkRelationships, &stats.relationships)
+		svc.countBucket(bkRelationships, &stats.Relationships)
 	}()
 	riWg.Add(1)
 	go func() {
 		defer riWg.Done()
-		svc.countBucket(bkRefsetItems, &stats.refsetItems)
+		svc.countBucket(bkRefsetItems, &stats.RefsetItems)
 	}()
 	rfWg.Add(1)
 	go func() {
@@ -1004,13 +1006,13 @@ func (svc *Svc) Statistics(lang string, verbose bool) (Statistics, error) {
 		if err != nil {
 			panic(err)
 		}
-		stats.refsets = make([]string, 0)
+		stats.Refsets = make([]string, 0)
 		for refset := range refsets {
 			rsd, err := svc.PreferredSynonym(refset, tags)
 			if err != nil {
 				panic(err)
 			}
-			stats.refsets = append(stats.refsets, rsd.Term)
+			stats.Refsets = append(stats.Refsets, rsd.Term)
 		}
 	}()
 	cWg.Wait()
@@ -1832,4 +1834,114 @@ func (svc *Svc) buildSearchIndices(ctx context.Context, verbose bool) error {
 	wg.Wait()
 	fmt.Fprintf(os.Stderr, "\nProcessed total: %d descriptions in %s.\n", atomic.LoadInt64(&total), time.Since(start))
 	return nil
+}
+
+// CompactStore compacts the underlying LeveDB datastore
+func (svc *Svc) CompactStore() error {
+	return svc.store.Compact()
+}
+
+// There is no benifit to Goroutines for writing as keys to index entries are
+// non-sequential so writes to underlying LevelDB datastore are expensive and
+// non-performant. Making this parallelised only adds contention to underlying
+// block sorting and compression.
+func (svc *Svc) RunIndexBuilder(batchSize int, lang string, verbose bool) {
+	var (
+		indexedDescriptions, indexedRelationships, indexedRefsetItems uint64
+		wg                                                            sync.WaitGroup
+	)
+	ctx := context.Background()
+	stats, err := svc.Statistics(lang, false)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	progress := progressbar.NewOptions64(
+		int64(stats.Descriptions+stats.Relationships+stats.RefsetItems),
+		progressbar.OptionSetDescription("Indexing"),
+		progressbar.OptionSetWriter(os.Stderr),
+		progressbar.OptionSetWidth(50),
+		progressbar.OptionThrottle(500*time.Millisecond),
+		//progressbar.OptionShowCount(),
+		progressbar.OptionShowIts(),
+		progressbar.OptionOnCompletion(func() {
+			fmt.Fprint(os.Stderr, "\n")
+		}),
+		progressbar.OptionSpinnerType(14),
+	)
+
+	descriptionsChan := svc.iterateDescriptions(ctx, batchSize)
+	for i := 0; i < runtime.NumCPU(); i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				descriptions, ok := <-descriptionsChan
+				if !ok {
+					break
+				}
+				err := svc.store.Update(func(batch Batch) error {
+					svc.indexDescriptions(batch, descriptions)
+					indexedDescriptions = indexedDescriptions + uint64(len(descriptions))
+					progress.Describe(fmt.Sprintf("Indexing: [1/3] Descriptions (%d/%d)", indexedDescriptions, stats.Descriptions))
+					progress.Add(len(descriptions))
+					return nil
+				})
+				if err != nil {
+					panic(err)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+
+	relationshipsChan := svc.iterateRelationships(ctx, batchSize)
+	for i := 0; i < runtime.NumCPU(); i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				relationships, ok := <-relationshipsChan
+				if !ok {
+					break
+				}
+				err := svc.store.Update(func(batch Batch) error {
+					svc.indexRelationships(batch, relationships)
+					indexedRelationships = indexedRelationships + uint64(len(relationships))
+					progress.Describe(fmt.Sprintf("Indexing: [2/3] Relationships (%d/%d)", indexedRelationships, stats.Relationships))
+					progress.Add(len(relationships))
+					return nil
+				})
+				if err != nil {
+					panic(err)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+
+	refsetItemsChan := svc.iterateRefsetItems(ctx, batchSize)
+	for i := 0; i < runtime.NumCPU(); i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				refsetItems, ok := <-refsetItemsChan
+				if !ok {
+					break
+				}
+				err := svc.store.Update(func(batch Batch) error {
+					svc.indexRefsetItems(batch, refsetItems)
+					indexedRefsetItems = indexedRefsetItems + uint64(len(refsetItems))
+					progress.Describe(fmt.Sprintf("Indexing: [3/3] RefsetItems (%d/%d)", indexedRefsetItems, stats.RefsetItems))
+					progress.Add(len(refsetItems))
+					return nil
+				})
+				if err != nil {
+					panic(err)
+				}
+			}
+		}()
+	}
+	wg.Wait()
 }

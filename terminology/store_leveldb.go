@@ -139,8 +139,20 @@ func (ls *levelStore) Close() error {
 	return ls.db.Close()
 }
 
+// Compacts underlying datastore.
+func (ls *levelStore) Compact() error {
+	return ls.db.CompactRange(util.Range{})
+}
+
 func newLevelService(filename string, readOnly bool) (*levelStore, error) {
-	opts := opt.Options{ReadOnly: readOnly}
+	opts := opt.Options{
+		BlockSize:                     1 * opt.MiB,
+		CompactionTableSize:           50 * opt.MiB,
+		CompactionTableSizeMultiplier: 2,
+		//CompactionTotalSize:           50 * opt.MiB,
+		WriteBuffer: 200 * opt.MiB,
+		ReadOnly:    readOnly,
+	}
 	db, err := leveldb.OpenFile(filename, &opts)
 	if err != nil {
 		return nil, err

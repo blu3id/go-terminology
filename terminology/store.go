@@ -96,6 +96,9 @@ type Store interface {
 	// Update creates a read and write transaction
 	Update(func(Batch) error) error
 
+	// Compact compacts the underlying LeveDB datastore
+	Compact() error
+
 	// Close closes any resources associated with the key-value store
 	Close() error
 }
@@ -116,26 +119,26 @@ type Search interface {
 
 // Statistics on the persistence store
 type Statistics struct {
-	concepts      uint64
-	descriptions  uint64
-	relationships uint64
-	refsetItems   uint64
-	searchIndex   uint64
-	refsets       []string
+	Concepts      uint64
+	Descriptions  uint64
+	Relationships uint64
+	RefsetItems   uint64
+	SearchIndex   uint64
+	Refsets       []string
 }
 
 func (st Statistics) String() string {
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("Number of concepts: %d\n", st.concepts))
-	b.WriteString(fmt.Sprintf("Number of descriptions: %d\n", st.descriptions))
-	b.WriteString(fmt.Sprintf("Number of relationships: %d\n", st.relationships))
-	b.WriteString(fmt.Sprintf("Number of reference set items: %d\n", st.refsetItems))
-	b.WriteString(fmt.Sprintf("Number of installed refsets: %d\n", len(st.refsets)))
-	b.WriteString(fmt.Sprintf("Search index size: %d\n", st.searchIndex))
-	if st.concepts == 0 || st.descriptions == 0 || st.relationships == 0 || st.refsetItems == 0 {
+	b.WriteString(fmt.Sprintf("Number of concepts: %d\n", st.Concepts))
+	b.WriteString(fmt.Sprintf("Number of descriptions: %d\n", st.Descriptions))
+	b.WriteString(fmt.Sprintf("Number of relationships: %d\n", st.Relationships))
+	b.WriteString(fmt.Sprintf("Number of reference set items: %d\n", st.RefsetItems))
+	b.WriteString(fmt.Sprintf("Number of installed refsets: %d\n", len(st.Refsets)))
+	b.WriteString(fmt.Sprintf("Search index size: %d\n", st.SearchIndex))
+	if st.Concepts == 0 || st.Descriptions == 0 || st.Relationships == 0 || st.RefsetItems == 0 {
 		b.WriteString("Warning: full import not completed. Need to re-run import.\n")
 	}
-	if st.searchIndex == 0 {
+	if st.SearchIndex == 0 {
 		b.WriteString("Warning: empty search index. Need to run precomputations.\n")
 	}
 	return b.String()

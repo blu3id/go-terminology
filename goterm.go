@@ -17,12 +17,12 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"runtime/pprof"
+	"time"
 
 	"github.com/wardle/go-terminology/server"
 	"github.com/wardle/go-terminology/terminology"
@@ -96,17 +96,23 @@ func main() {
 		if flag.NArg() == 0 {
 			log.Fatalf("no input directories specified")
 		}
-		for _, filename := range flag.Args() {
-			ctx := context.Background()
-			importer := terminology.NewImporter(svc, 5000, 0, *verbose)
-			importer.Import(ctx, filename)
-		}
+		runImport2(svc, 50000, *verbose)
+		svc.CompactStore()
+		time.Sleep(60 * time.Second)
+		//for _, filename := range flag.Args() {
+		//	ctx := context.Background()
+		//	importer := terminology.NewImporter(svc, 5000, 0, *verbose)
+		//	importer.Import(ctx, filename)
+		//}
 	}
 
 	// perform precomputations if requested
 	if *precompute {
 		help = false
-		svc.PerformPrecomputations(context.Background(), 500, *verbose)
+		//svc.PerformPrecomputations(context.Background(), 500, *verbose)
+		svc.RunIndexBuilder(50000, *lang, *verbose)
+		svc.CompactStore()
+		time.Sleep(60 * time.Second)
 	}
 
 	// get statistics on store

@@ -8,3 +8,7 @@
 
 # Emacs backup files
 *~
+
+_REF2_data_files
+snow.db
+*.exe

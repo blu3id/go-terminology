@@ -1,0 +1,23 @@
+
+D:\projects\sct-import\go-terminology-master>go-terminology -db snow.db -import d
+Importing: Concepts [3/3] 100% |██████████████████████████████████████████████████| (3.5/3.5 GB, 8.750 MB/s) [6m48s:0s]
+2020/07/22 01:31:29 done in 6m50.5999864s
+
+D:\projects\sct-import\go-terminology-master>go-terminology -db snow.db -precompute -v
+Indexing: [1/3] Descriptions (2550000/2608753)   9% |████                                              | (679684 it/s) [3s:37s]
+D:\projects\sct-import\go-terminology-master>go-terminology -db snow.db -precompute -v
+Indexing: [3/3] RefsetItems (18535905/18535905) 100% |██████████████████████████████████████████████████| (84028 it/s) [5m30s:0s]
+
+D:\projects\sct-import\go-terminology>go-terminology -db snow.db -import ../go-terminology-master/_REF2_data_files
+Import complete. Processed: : 33m29.8355931s: 961421 concepts, 2608753 descriptions, 6707062 relationships and 18535911 refset items...
+D:\projects\sct-import\go-terminology>go-terminology -db snow.db -precompute
+
+Processed total: 2608753 descriptions in 7m45.2034603s.
+
+D:\projects\sct-import\go-terminology>go-terminology -db snow.db -status
+Number of concepts: 961421
+Number of descriptions: 2608753
+Number of relationships: 6655017
+Number of reference set items: 18535905
+Number of installed refsets: 373
+Search index size: 1469082
